@@ -46,11 +46,14 @@ A full definition
   `fallbacks`
   : Values for CSS custom properties, keyed by name (`{"--brand": "#c0392b"}`). See [](#css-custom-properties).
 
+  `dark_fallbacks`
+  : Values merged over `fallbacks` when the chart is dark (`{"--chart-bg": "#1b1b1b"}`). See [](#css-custom-properties).
+
   `vega_theme`
   : The name of a theme bundled with vega-embed, used underneath `config`. See [](#built-in-themes).
 
 A plain dict
-: If a dict has none of the keys `config`, `dark`, `fallbacks` or `vega_theme`, it's used as the config. A `label` key in it still names the theme: `{"label": "Print", "font": "Times"}`.
+: If a dict has none of the keys `config`, `dark`, `fallbacks`, `dark_fallbacks` or `vega_theme`, it's used as the config. A `label` key in it still names the theme: `{"label": "Print", "font": "Times"}`.
 
 A dotted path
 : The import path of a dict (either kind) or a {py:class}`~wagtail_vega.themes.Theme`, for themes that are too long for settings.
@@ -121,10 +124,20 @@ Strings in a config can refer to CSS custom properties with `var(--name)` or `va
 In the browser, each `var()` is replaced with the first of:
 
 1. the property's value on the `<wagtail-vega-chart>` element, from its computed style;
-2. the theme's `fallbacks` value for that property;
+2. the theme's `fallbacks` value for that property, with `dark_fallbacks` merged over them when the chart is dark;
 3. the default in `var(--name, default)`.
 
 Because the value comes from the chart element, you can set different values for different parts of a page, for example with `.sidebar .wagtail-vega { --brand: … }`. Values are read each time the chart renders, including when the colour scheme changes.
+
+**The admin has no site CSS.** The chart builder's preview can't see your site's stylesheet, so it uses the fallbacks, and the dark ones when it previews dark. Give a dark fallback for any property whose site value changes in dark mode, or the preview mixes light fallbacks with the dark config. For example, a white `var(--chart-bg, white)` behind light-grey dark-mode labels:
+
+```python
+"house": {
+    "config": {"background": "var(--chart-bg, white)", ...},
+    "dark": {"axis": {"labelColor": "#ddd"}, ...},
+    "dark_fallbacks": {"--chart-bg": "#1b1b1b"},
+}
+```
 
 When the chart is {doc}`rendered on the server <ssr>`, there's no page CSS, so `var()` is replaced with the `fallbacks` value or the `var()` default. Give every property you use one or the other, or the server-rendered SVG will have an invalid colour until JavaScript runs.
 

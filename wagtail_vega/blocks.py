@@ -355,6 +355,7 @@ class Chart:
     caption: str = ""
     dark_config: dict | None = None
     fallbacks: dict = field(default_factory=dict)
+    dark_fallbacks: dict = field(default_factory=dict)
     svg: str | None = None
     tables: list[dict] = field(default_factory=list)
 
@@ -369,6 +370,7 @@ class Chart:
             "darkConfig": self.dark_config,
             "embed": self.embed_options,
             "fallbacks": self.fallbacks,
+            "darkFallbacks": self.dark_fallbacks,
             "allowedHosts": get_allowed_hosts(),
             "cspSafe": bool(get_setting("CSP_SAFE")),
         }
@@ -563,6 +565,7 @@ class BaseChartBlock(blocks.StructBlock):
         )
         if theme:
             chart.fallbacks = theme.fallbacks
+            chart.dark_fallbacks = theme.dark_fallbacks
             if theme.dark:
                 dark = self.get_spec(value, context, datasets, theme, dark=True)
                 chart.dark_config = dark.get("config")

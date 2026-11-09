@@ -98,6 +98,7 @@ class CodeEditor(forms.Textarea):
                 "config": theme.config,
                 "dark": theme.dark,
                 "fallbacks": theme.fallbacks,
+                "dark_fallbacks": theme.dark_fallbacks,
                 "vega_theme": theme.vega_theme,
             }
             for name, theme in get_themes().items()

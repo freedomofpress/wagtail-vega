@@ -135,3 +135,12 @@ def test_django_check_command_runs_our_checks(vega_settings):
     vega_settings.update(THEMES={}, DEFAULT_THEME="missing")
     with pytest.raises(SystemCheckError, match="wagtail_vega.E002"):
         call_command("check")
+
+
+def test_dark_fallbacks():
+    theme = build_theme(
+        "t", {"config": {"background": "var(--bg, white)"}, "dark_fallbacks": {"--bg": "#111"}}
+    )
+    assert theme.dark_fallbacks == {"--bg": "#111"} and theme.fallbacks == {}
+    # A dict with only dark_fallbacks is a theme definition, not a Vega config
+    assert build_theme("t", {"dark_fallbacks": {"--bg": "#111"}}).config == {}
