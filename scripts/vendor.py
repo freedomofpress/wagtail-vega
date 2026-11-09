@@ -357,7 +357,11 @@ def main() -> None:
     tars = {name: tarball(name, v) for name, v in PACKAGES.items()}
 
     for name, member, dest in FILES:
-        dest.write_bytes(read(tars[name], member))
+        content = read(tars[name], member)
+        if dest.suffix == ".js":
+            # The .map files aren't vendored (see strip_source_maps)
+            content = strip_source_maps(content.decode()).encode()
+        dest.write_bytes(content)
         print(f"wrote {dest.relative_to(ROOT)}")
 
     interp = read(tars["vega-interpreter"], "package/build/vega-interpreter.js")
