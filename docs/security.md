@@ -41,22 +41,18 @@ The spec editor checks the spec as it's edited by posting it to `/admin/wagtail-
 
 The editor itself, CodeMirror 6, is vendored like the Vega libraries (see {doc}`contributing`), so the admin makes no CDN requests either.
 
-(voyager-security)=
+(builder-security)=
 
-### The visual chart builder (Vega Voyager)
+### The chart builder
 
-The spec field's **Build chart with Voyager** button (see {doc}`editor-experience`) runs Voyager, whose last release (2018) uses React 15, vega 4 and vega-lite 2. It's vendored and integrity-checked like the other libraries, and kept away from the admin:
+The spec field's **Build chart** button (see {doc}`editor-experience`) opens the chart builder. It's wagtail-vega's own code, running in the admin page like the code editor, with no third-party code beyond the Vega libraries the site already ships:
 
-- It runs only on its own admin page, `/admin/wagtail-vega/voyager/`, loaded in an `<iframe sandbox="allow-scripts">`. The page is also sent with its own `Content-Security-Policy`, starting `sandbox allow-scripts`, so it stays sandboxed even if opened on its own. Without `allow-same-origin`, it gets an opaque origin: it can't read the admin's DOM, cookies or CSRF token. Its scripts and styles never load in the admin page itself.
-- The same policy cuts Voyager off from the network (`default-src 'none'`, `connect-src 'none'`, `form-action 'none'`, `base-uri 'none'`). Scripts, styles, images and fonts may only come from your static files. The admin page fetches the chart's data and passes it in, so Voyager never needs to make a request itself.
-- The admin and the iframe talk with `postMessage`. The admin only accepts messages from that iframe's window with the sandbox's `"null"` origin; the iframe only accepts messages from its parent at the admin's origin, and only sends to that origin.
-- Documents are read through `/admin/wagtail-vega/document-rows/?id=…`, which also needs permission to choose (or change) the document. URL datasets are fetched by the admin page, and only from the allowlist, checked on the URL as the browser resolves it.
-- The spec it produces is checked with the live validation endpoint above before it's written to the field, and again when the page is saved.
-
-All its admin views need permission to access the Wagtail admin.
+- It reads the chart's data from the form. Documents are read through `/admin/wagtail-vega/document-rows/?id=…` ({py:func}`wagtail_vega.views.document_rows`), which needs permission to access the admin and to choose (or change) the document. URL datasets are fetched by the admin page, and only from the allowlist, checked on the URL as the browser resolves it.
+- The spec it writes refers to the dataset by name, so no data is copied into it. It's checked with the live validation endpoint above before it's written to the field, and again when the page is saved.
+- Its preview loads the vendored vega, vega-lite, vega-embed and vega-interpreter from your static files the first time the builder opens, and draws with the interpreter, as in {ref}`CSP-safe mode <csp-safe>`. It injects no styles.
 
 :::{note}
-**If your admin has a Content Security Policy**, the Voyager page needs `'unsafe-eval'` in `script-src`: vega 4 and Voyager's schema validator compile code with `new Function`. The page sends its own `sandbox` policy; a policy your middleware adds to admin responses applies on top. Allow `frame-src 'self'` (and `frame-ancestors 'self'`) for the iframe, and add the hosts of any URL datasets to `connect-src`, since the admin page fetches them for Voyager. The page also needs `X-Frame-Options: SAMEORIGIN`, which it sets itself.
+**If your admin has a Content Security Policy**, the builder needs nothing beyond what the admin itself needs: `script-src` and `style-src` for your static files (no `'unsafe-eval'` or `'unsafe-inline'` for the builder), and `connect-src 'self'` for the validation and document endpoints. Add the hosts of any URL datasets to `connect-src`, since the admin page fetches them for the builder.
 :::
 
 Some consequences:

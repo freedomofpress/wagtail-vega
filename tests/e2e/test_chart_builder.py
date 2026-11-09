@@ -792,3 +792,29 @@ def test_narrow_screens(editor):
     controls = dialog.locator("[data-controls]").bounding_box()
     preview = dialog.locator("[data-preview]").bounding_box()
     assert preview["y"] >= controls["y"] + controls["height"] - 1
+
+
+def test_preview_needs_no_unsafe_eval(admin_page, live_server, chart_page, console_errors):
+    """The builder's preview runs under an admin CSP without 'unsafe-eval'."""
+    url = live_server.url + reverse("wagtailadmin_pages:edit", args=(chart_page.pk,))
+
+    def add_csp(route):
+        response = route.fetch()
+        csp = "script-src 'self'; object-src 'none'"
+        route.fulfill(
+            response=response, headers={**response.headers, "content-security-policy": csp}
+        )
+
+    admin_page.route(url, add_csp)
+    admin_page.add_init_script(
+        """document.addEventListener("securitypolicyviolation", (e) =>
+            console.error(`CSP violation: ${e.violatedDirective} ${e.blockedURI}`))"""
+    )
+    admin_page.goto(url)
+    expect(admin_page.locator(LAUNCHER)).to_have_count(4)
+    dialog = open_builder(admin_page)
+    wait_for_preview(dialog)
+    choose(admin_page, control(dialog, "mark"), "Line")
+    expect(dialog.locator("[data-chart] svg .mark-line").first).to_be_visible()
+    assert [e for e in console_errors if "eval" in e] == []
+    expect(dialog.locator("[data-warnings]")).to_be_empty()
