@@ -5,36 +5,45 @@
   display: none !important;
 }
 
-/* Paste / Document / URL as a segmented control */
-.wagtail-vega-source-toggle :is(ul, div:has(> label > input[type="radio"]), div:has(> div > label > input[type="radio"])) {
+/* Paste / Document / URL as a segmented control: one outer border, dividers
+   between options, and the selected option filling its segment edge to edge.
+   Only the group itself (the input wrapper's direct child) gets the border,
+   not the wrapper around each option. */
+.wagtail-vega-source-toggle .w-field__input > :is(div, ul) {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 0;
   margin: 0;
   padding: 0;
   list-style: none;
   border: 1px solid var(--w-color-border-field-default, #ccc);
   border-radius: 0.3125rem;
   overflow: hidden;
+  background: var(--w-color-surface-field, transparent);
 }
-.wagtail-vega-source-toggle li,
-.wagtail-vega-source-toggle :is(ul, div) > div {
+.wagtail-vega-source-toggle .w-field__input > :is(div, ul) > :is(div, li) {
+  display: flex;
   margin: 0;
   padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+.wagtail-vega-source-toggle .w-field__input > :is(div, ul) > :is(div, li) + :is(div, li) {
+  border-inline-start: 1px solid var(--w-color-border-field-default, #ccc);
 }
 .wagtail-vega-source-toggle label:has(> input[type="radio"]) {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   margin: 0;
   padding: 0.5rem 1rem;
+  border: 0;
+  border-radius: 0;
   cursor: pointer;
   font-weight: 600;
   color: var(--w-color-text-label, inherit);
-  background: var(--w-color-surface-field, transparent);
-  border-inline-end: 1px solid var(--w-color-border-field-default, #ccc);
+  background: transparent;
 }
-.wagtail-vega-source-toggle :is(li, div):last-child label:has(> input[type="radio"]) {
-  border-inline-end: 0;
+.wagtail-vega-source-toggle label:has(> input[type="radio"]):hover {
+  background: var(--w-color-surface-field-inactive, rgba(127, 127, 127, 0.12));
 }
 .wagtail-vega-source-toggle label:has(> input[type="radio"]:checked) {
   color: var(--w-color-text-button, #fff);
