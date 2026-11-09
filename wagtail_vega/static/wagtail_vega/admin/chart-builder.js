@@ -474,7 +474,7 @@
         "fieldset",
         { className: "wagtail-vega-builder__section" },
         h("legend", { text: "Title and size" }),
-        this.control("title", "Chart title", h("input", { type: "text", "data-prop": "chartTitle" })),
+        this.control("chart-title", "Chart title", h("input", { type: "text", "data-prop": "chartTitle" })),
         h(
           "div",
           { className: "wagtail-vega-builder__grid" },
@@ -748,6 +748,8 @@
       this.showConfirm(false);
       this.setErrors([]);
       this.sync();
+      // The spec as it is now; the preview follows shortly
+      this.$("[data-json]").textContent = JSON.stringify(this.spec.toSpec(this.state, this.datasetName).spec, null, 2);
       this.$("[data-use]").disabled = !this.spec.channelsFor(this.state.mark).some((c) => this.spec.hasField(this.state.channels[c]));
       clearTimeout(this.previewTimer);
       this.previewTimer = setTimeout(() => this.renderPreview(), PREVIEW_DELAY);
@@ -937,7 +939,6 @@
       if (!this.dialog || !this.state) return;
       const token = ++this.previewToken;
       const { spec } = this.spec.toSpec(this.state, this.datasetName);
-      this.$("[data-json]").textContent = JSON.stringify(spec, null, 2);
       const theme = this.theme();
       this.$("[data-scheme-picker]").hidden = !theme?.dark;
       const host = this.$("[data-chart]");
@@ -1036,7 +1037,9 @@
       if (!this.dialog) return; // closed while the spec was being checked
       this.setStatus("");
       this.result = spec;
-      if (this.textarea.value.trim()) this.showConfirm(true);
+      // An empty field (a new block's holds "null") needs no confirmation
+      const current = this.textarea.value.trim();
+      if (current && current !== "null") this.showConfirm(true);
       else this.write();
     }
 
