@@ -199,6 +199,25 @@ class DonationsChartBlock(ChartBlock):
         }
 ```
 
+## Adding datasets to an editor's chart
+
+To give editors' charts extra data from code, say a lookup table, subclass `ChartBlock`, add it in `get_datasets()`, and list its name in `extra_dataset_names`. `ChartBlock` checks that a spec only loads datasets the chart has, both on save and as editors type, and this tells the check about yours:
+
+```python
+from wagtail_vega.blocks import ChartBlock
+
+
+class RegionalChartBlock(ChartBlock):
+    extra_dataset_names = ("regions",)
+
+    def get_datasets(self, value, context=None):
+        datasets = super().get_datasets(value, context)
+        datasets["regions"] = list(Region.objects.values("code", "name", "population"))
+        return datasets
+```
+
+Editors can then use `{"lookup": "region", "from": {"data": {"name": "regions"}, "key": "code", "fields": ["name"]}}` in their specs.
+
 ## A chart defined in code
 
 To ship a fixed chart, override {py:meth}`~wagtail_vega.blocks.BaseChartBlock.get_spec_source` and remove the spec field with `spec = None`:

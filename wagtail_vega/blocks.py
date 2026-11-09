@@ -629,7 +629,13 @@ class ChartBlockAdapter(StructBlockAdapter):
 
     def js_args(self, block):
         name, children, meta = super().js_args(block)
-        meta = {**meta, "wagtailVega": {"missingDataset": missing_dataset_messages()}}
+        meta = {
+            **meta,
+            "wagtailVega": {
+                "missingDataset": missing_dataset_messages(),
+                "extraDatasetNames": list(getattr(block, "extra_dataset_names", ())),
+            },
+        }
         return [name, children, meta]
 
     @cached_property
@@ -675,6 +681,10 @@ class ChartBlock(BaseChartBlock):
 
     field_order = ("data", "spec", "description", "caption", "theme")
 
+    #: Names of datasets a subclass adds in ``get_datasets()`` on top of the
+    #: editor's, so specs may load them without failing validation.
+    extra_dataset_names: tuple[str, ...] = ()
+
     data = blocks.ListBlock(
         DatasetBlock(),
         min_num=0,
@@ -699,7 +709,7 @@ class ChartBlock(BaseChartBlock):
                     [ValidationError(_("Dataset names must be unique: %s") % ", ".join(duplicates))]
                 )
             )
-        missing = missing_dataset_problems(value["spec"], names)
+        missing = missing_dataset_problems(value["spec"], [*names, *self.extra_dataset_names])
         if missing:
             raise StructBlockValidationError(
                 block_errors={"spec": ValidationError([str(p) for p in missing])}

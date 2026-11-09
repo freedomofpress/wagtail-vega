@@ -647,3 +647,26 @@ def test_tooltips_can_be_turned_off(vega_settings, vl_bar):
     vega_settings["EMBED_OPTIONS"] = {"tooltip": False}
     block = ChartBlock()
     assert block.build_chart(chart_value(block, vl_bar)).embed_options["tooltip"] is False
+
+
+def test_subclasses_can_add_dataset_names(vl_bar):
+    """A ChartBlock subclass that adds datasets from code declares their names,
+    so specs loading them pass validation, on save and in the editor."""
+    from wagtail.admin.telepath import JSContext
+
+    class WithLookup(ChartBlock):
+        extra_dataset_names = ("regions",)
+
+        def get_datasets(self, value, context=None):
+            return {**super().get_datasets(value, context), "regions": [{"id": 1}]}
+
+    spec = {
+        **vl_bar,
+        "transform": [{"lookup": "a", "from": {"data": {"name": "regions"}, "key": "id"}}],
+    }
+    block = WithLookup()
+    assert block.clean(chart_value(block, spec, [("source", "csv", "a\n1")]))
+    with pytest.raises(StructBlockValidationError):
+        ChartBlock().clean(chart_value(ChartBlock(), spec, [("source", "csv", "a\n1")]))
+    meta = JSContext().pack(block)["_args"][2]
+    assert meta["wagtailVega"]["extraDatasetNames"] == ["regions"]

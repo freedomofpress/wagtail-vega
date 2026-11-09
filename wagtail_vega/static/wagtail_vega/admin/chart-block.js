@@ -155,7 +155,10 @@
         const editor = children.spec?.widget?.codeEditor;
         const messages = this.meta?.wagtailVega?.missingDataset;
         if (editor && children.data && messages) {
-          editor.addCheck((spec) => missingDatasets(spec, datasetNames(children.data), messages));
+          const extra = this.meta.wagtailVega.extraDatasetNames || [];
+          editor.addCheck((spec) =>
+            missingDatasets(spec, [...datasetNames(children.data), ...extra], messages),
+          );
           watchDatasets(block, editor);
         }
         return block;
