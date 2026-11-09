@@ -15,7 +15,7 @@ Dataset = list | dict
 
 
 class SpecError(ValueError):
-    pass
+    """The spec has no ``$schema``, or one that isn't Vega or Vega-Lite."""
 
 
 def spec_kind(spec: Mapping[str, Any]) -> str:
@@ -60,6 +60,9 @@ def _walk(node: Any) -> Iterator[tuple[str | None, Any, Any]]:
 
 
 def remote_data(url: str, fmt: str | None = None) -> dict[str, Any]:
+    """A remote dataset: ``{"url": url}``, plus ``{"format": {"type": fmt}}``
+    if ``fmt`` (e.g. ``"csv"``) is given. Return these from
+    ``BaseChartBlock.get_datasets()`` to have the browser load the data."""
     ref: dict[str, Any] = {"url": url}
     if fmt:
         ref["format"] = {"type": fmt}
@@ -67,6 +70,8 @@ def remote_data(url: str, fmt: str | None = None) -> dict[str, Any]:
 
 
 def is_remote(dataset: Dataset) -> bool:
+    """Whether a dataset is a remote reference (a dict with a ``url``)
+    rather than inline rows."""
     return isinstance(dataset, dict) and "url" in dataset
 
 
@@ -123,7 +128,7 @@ def iter_urls(spec: Any) -> Iterator[str]:
 
 def host_allowed(url: str, allowed_hosts: list[str]) -> bool:
     """Relative URLs are same-origin and always allowed; absolute URLs must be
-    http(s) and on the allowlist ("*.example.com" also matches subdomains)."""
+    http(s) and on the allowlist (``"*.example.com"`` also matches subdomains)."""
     parts = urlsplit(url)
     if not parts.scheme and not parts.netloc:
         return True
@@ -140,4 +145,5 @@ def host_allowed(url: str, allowed_hosts: list[str]) -> bool:
 
 
 def disallowed_urls(spec: Any, allowed_hosts: list[str]) -> list[str]:
+    """The literal URLs in ``spec`` that :func:`host_allowed` rejects."""
     return [u for u in iter_urls(spec) if not host_allowed(u, allowed_hosts)]
