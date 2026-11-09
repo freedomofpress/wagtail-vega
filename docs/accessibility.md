@@ -10,7 +10,8 @@ Charts are hard to make accessible, and a chart on its own isn't usable by every
 
 **A data table.** Unless `FALLBACK_TABLE` is off, a collapsible `<details>` element under the chart, labelled "Chart data", holds a table of each inline dataset. It helps screen reader users, keyboard users and anyone who wants the numbers.
 
-- Each column is a `<th scope="col">`.
+- Each column is a `<th scope="col">`. Columns of numbers are right-aligned, with digits of equal width, so they're easy to compare.
+- Wide tables scroll sideways inside their own box, rather than making the page scroll.
 - When a chart has more than one dataset, each table has a `<caption>` with the dataset's name.
 - Tables show at most `FALLBACK_TABLE_MAX_ROWS` rows (100 by default), followed by a note such as "Showing 100 of 2000 rows."
 - Only datasets supplied as inline rows of objects are included. Data loaded from URLs and `values` written into the spec aren't.
@@ -20,7 +21,9 @@ Turn it off for one kind of block with `fallback_table=False`, for example when 
 
 **Interactivity stays reachable.** The figure doesn't have `role="img"`, which would hide its contents from assistive technology, so inputs bound to signals, such as sliders and dropdowns, can still be used.
 
-**Without JavaScript.** With {doc}`server-side rendering <ssr>`, readers without JavaScript see an SVG of the chart. Without it, they see "This chart needs JavaScript to display." In both cases, the description, caption and data table are part of the HTML.
+**Without JavaScript.** With {doc}`server-side rendering <ssr>`, readers without JavaScript see an SVG of the chart. Without it, they see "This chart needs JavaScript to display.", followed by "Its data is under “Chart data” below." when there's a data table. In both cases, the description, caption and data table are part of the HTML.
+
+**When a chart fails.** If a chart can't be drawn, or its data doesn't load, readers see "Sorry, this chart couldn't be displayed." (pointing to the data table, when there is one), rather than an empty space. While a chart is loading, its element has `aria-busy="true"`.
 
 ## Vega's own accessibility features
 
@@ -34,4 +37,4 @@ Themes control colours, so check them for contrast and for colour-blind readers,
 
 ## Language
 
-The chart template's own text ("This chart needs JavaScript to display.", "Chart data" and "Showing … of … rows.") is marked for translation, so it follows the page's active language once translations exist. To change the wording, override the template (see [](frontend.md#overriding-the-template)).
+The chart template's own text ("This chart needs JavaScript to display.", "Sorry, this chart couldn't be displayed.", "Chart data" and "Showing … of … rows.") is marked for translation, so it follows the page's active language once translations exist. To change the wording, override the template (see [](frontend.md#overriding-the-template)).

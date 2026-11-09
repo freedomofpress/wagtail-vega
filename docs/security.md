@@ -46,7 +46,7 @@ The editor itself, CodeMirror 6, is vendored like the Vega libraries (see {doc}`
 
 ### The visual chart builder (Vega Voyager)
 
-The spec field's **Build chart with Voyager** button (see {doc}`editor-experience`) runs Voyager, whose last release (2018) uses React 15, vega 4 and vega-lite 2. It's vendored and integrity-checked like the other libraries, and kept away from the admin:
+The spec field's **Build chart from data** button (see {doc}`editor-experience`) runs Voyager, whose last release (2018) uses React 15, vega 4 and vega-lite 2. It's vendored and integrity-checked like the other libraries, and kept away from the admin:
 
 - It runs only on its own admin page, `/admin/wagtail-vega/voyager/`, loaded in an `<iframe sandbox="allow-scripts">`. The page is also sent with its own `Content-Security-Policy`, starting `sandbox allow-scripts`, so it stays sandboxed even if opened on its own. Without `allow-same-origin`, it gets an opaque origin: it can't read the admin's DOM, cookies or CSRF token. Its scripts and styles never load in the admin page itself.
 - The same policy cuts Voyager off from the network (`default-src 'none'`, `connect-src 'none'`, `form-action 'none'`, `base-uri 'none'`). Scripts, styles, images and fonts may only come from your static files. The admin page fetches the chart's data and passes it in, so Voyager never needs to make a request itself.

@@ -49,6 +49,8 @@ Blocks render with `wagtail_vega/chart.html`. Its context has:
 `chart`
 : A {py:class}`~wagtail_vega.blocks.Chart`, with `id`, `kind` (`"vega"` or `"vega-lite"`), `spec`, `embed_options`, `description`, `caption`, `dark_config`, `fallbacks`, `svg` (the server-rendered SVG, or `None`), `tables`, and `payload_script` (the payload's `<script>` tag).
 
+  Each table in `tables` has `name`, `columns`, `rows` (lists of values), `truncated` and `total`. It also has `head` (`{"name", "numeric"}` for each column) and `cells` (rows of `{"value", "numeric"}`), for templates that treat columns of numbers differently; the default template right-aligns them.
+
 `value`, `self`
 : The block's value, as for any block.
 
@@ -58,14 +60,15 @@ The template outputs:
 
 ```html
 <figure class="wagtail-vega" id="wagtail-vega-1a2b3c4d" aria-describedby="wagtail-vega-1a2b3c4d-description">
-    <wagtail-vega-chart class="wagtail-vega__chart" data-payload="wagtail-vega-1a2b3c4d-payload">
+    <script id="wagtail-vega-1a2b3c4d-payload" type="application/json">{"spec": ...}</script>
+    <wagtail-vega-chart class="wagtail-vega__chart" data-payload="wagtail-vega-1a2b3c4d-payload"
+                        data-error-message="Sorry, this chart couldn't be displayed. ...">
         <!-- the server-rendered SVG, or a <noscript> message -->
     </wagtail-vega-chart>
-    <script id="wagtail-vega-1a2b3c4d-payload" type="application/json">{"spec": ...}</script>
     <p class="wagtail-vega__description" id="wagtail-vega-1a2b3c4d-description">...</p>
     <details class="wagtail-vega__data">
         <summary>Chart data</summary>
-        <table>...</table>
+        <div class="wagtail-vega__table"><table>...</table></div>
     </details>
     <figcaption class="wagtail-vega__caption">...</figcaption>
 </figure>
@@ -112,9 +115,11 @@ The default template has no `{% block %}`s, so copy it rather than extending it.
 
 `wagtail-vega.js` defines the `<wagtail-vega-chart>` custom element. When one is added to the page, it reads its payload and renders the chart. It renders again when the colour scheme changes or when asked to refresh. When it's removed from the page, it frees the Vega view.
 
-While it renders, the server-rendered SVG or `<noscript>` message stays in place. Once the chart is drawn and its data has loaded, it replaces them, and the element gets the `is-rendered` class.
+While it renders, the server-rendered SVG or `<noscript>` message stays in place, and the element has `aria-busy="true"`. Once the chart is drawn and its data has loaded, it replaces them, and the element gets the `is-rendered` class.
 
-If rendering fails, the element gets the `has-error` class, logs the error to the console, and fires `wagtail-vega:error`. That covers an invalid spec, and also data that fails to load or parse (a missing file, or CSV read as JSON). If the spec was invalid, the element keeps its previous content. If only the data failed, the chart's axes and frame are drawn without data.
+Until then, `wagtail-vega.css` gives the element a minimum height, so the text below doesn't move down when the chart appears. It's 20rem by default; set `--wagtail-vega-loading-height` to suit your charts, or to `0` to turn it off. There's no minimum height when JavaScript is off, or when a server-rendered SVG is showing.
+
+If rendering fails, the element gets the `has-error` class, logs the error to the console, and fires `wagtail-vega:error`. Unless a server-rendered SVG is still showing, it also adds a `<p class="wagtail-vega__error">` with the text of its `data-error-message` attribute, so readers know something is missing: "Sorry, this chart couldn't be displayed.", followed by "Its data is under “Chart data” below." when there's a data table. The message is removed if the chart later renders. That covers an invalid spec, and also data that fails to load or parse (a missing file, or CSV read as JSON). If the spec was invalid, the element keeps its previous content. If only the data failed, the chart's axes and frame are drawn without data.
 
 The element has:
 

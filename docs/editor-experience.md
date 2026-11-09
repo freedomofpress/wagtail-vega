@@ -6,11 +6,13 @@ This page describes what editors see when they work with a `ChartBlock`, so you 
 
 Editors add a **Chart** block from the StreamField's block menu. Its fields are shown in this order:
 
-1. **Data**: a list of datasets. Each has a **Name**, which defaults to `source`, and a **Source** toggle.
-2. **Spec**: the Vega or Vega-Lite spec, in a [code editor](#code-editor) that underlines problems as you type.
-3. **Description**: a short description of the chart, for people using screen readers. It isn't shown on the page.
-4. **Caption**: shown under the chart.
+1. **Data**: a list of datasets. A new chart starts with one, named `source`, ready for pasting. Each has a **Name** and a **Source** toggle.
+2. **Spec**: the Vega or Vega-Lite spec, in a [code editor](#code-editor) that underlines problems as you type. While it's empty, it shows an example spec that loads the `source` dataset.
+3. **Description**: what the chart shows, and what readers should take from it, for people using screen readers. It isn't shown on the page.
+4. **Caption**: shown under the chart, e.g. a title, the source of the data, or notes.
 5. **Theme**: a dropdown of the site's themes. The blank option is labelled with the default theme, e.g. "Site default (House style)".
+
+When a chart block is collapsed, its header shows the spec's `title`, or else its caption or description, so editors can tell charts apart.
 
 A typical workflow is:
 
@@ -26,7 +28,7 @@ Chart blocks work in Wagtail's live preview, so editors can see the chart as the
 The **Source** toggle has three options. Only the inputs for the selected option are shown.
 
 Paste
-: Paste CSV, JSON or cells copied from a spreadsheet. The first row must be the column names. A summary under the box shows how the data was read, for example:
+: Paste CSV, JSON or cells copied from a spreadsheet into **Pasted data**. The first row must be the column names. While it's empty, the box shows a short example. A summary under the box shows how the data was read, for example:
 
   `Tab-separated (e.g. copied from a spreadsheet) · 6 rows · quarter (text), requests (number)`
 
@@ -40,6 +42,8 @@ URL
 
 Editors can add more than one dataset, as long as each has a different name, and refer to each by name in the spec.
 
+Screen readers announce the toggle as a group of radio buttons named "Source", and the summary as part of the pasted data's description.
+
 ## Validation
 
 When the page is saved, editors see an error if:
@@ -49,6 +53,7 @@ When the page is saved, editors see an error if:
 - the spec loads data from a host that isn't allowed;
 - a dataset has no data for its selected source, or its data can't be read;
 - a dataset name is invalid, or used twice in the same chart;
+- the spec loads a dataset by name that the chart doesn't have, e.g. `"data": {"name": "sales"}` when the only dataset is called `source`. The message names the chart's datasets: `This chart has no dataset called "sales". Use one of its datasets (source), or add one under Data.`;
 - a document isn't a `.csv`, `.tsv` or `.json` file;
 - a URL isn't allowed.
 
@@ -69,6 +74,9 @@ JSON syntax errors
 
 Spec errors
 : Shortly after the editor stops typing, the spec is checked on the server with the same checks as saving: the Vega or Vega-Lite schema, and the data host allowlist. The problem is underlined at the part of the spec it's about. For example, in `"type": "nominl"` the value `"nominl"` is underlined, and a `url` on a host that isn't allowed is underlined too. The first problem, with its line number, is also shown under the editor.
+
+Missing datasets
+: In a {py:class}`~wagtail_vega.blocks.ChartBlock`, the name in each `"data": {"name": ...}` is underlined if the chart has no dataset with that name. This is checked again when a dataset is renamed, added or removed, and when the page is saved.
 
 Errors from saving
 : If a page can't be saved because of the spec, the errors are shown above the field as usual, and each one is also underlined in the spec, at the path its message starts with (e.g. `encoding.x.type`).
@@ -91,7 +99,7 @@ Screen readers announce the field's label and help text, and the first problem u
 
 ## Visual chart builder (Vega Voyager)
 
-Above the spec's code editor is a **Build chart with Voyager** button. It opens [Vega Voyager](https://github.com/vega/voyager) in a lightbox, loaded with the chart's data. Editors build a chart by dragging fields onto encoding shelves (x, y, colour…), or by picking one of the views Voyager suggests, and then choose **Use this chart** to put its spec in the field.
+Above the spec's code editor is a **Build chart from data** button. It opens [Vega Voyager](https://github.com/vega/voyager) in a lightbox, loaded with the chart's data. Editors build a chart by dragging fields onto encoding shelves (x, y, colour…), or by picking one of the views Voyager suggests, and then choose **Use this chart** to put its spec in the field.
 
 Data
 : Voyager gets the data from the form as it is now, whether or not the page has been saved. Pasted data is read exactly as it will be for the chart, documents are read on the server, and URL datasets are fetched by the browser, from allowed hosts only. If the chart has several datasets, a **Dataset** menu picks one. Datasets with no data yet are left out.

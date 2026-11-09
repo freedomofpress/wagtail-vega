@@ -14,6 +14,10 @@
  * Events (bubbling, on the <wagtail-vega-chart> element):
  *   wagtail-vega:rendered  detail: the vega-embed result
  *   wagtail-vega:error     detail: {error} — the spec failed, or data didn't load
+ *
+ * While it renders, the element has aria-busy="true". If it fails, it gets
+ * the has-error class and a <p class="wagtail-vega__error"> with the text of
+ * its data-error-message attribute (set by the chart template, translated).
  */
 (() => {
   "use strict";
@@ -217,6 +221,7 @@
       const target = document.createElement("div");
       target.className = "wagtail-vega__target";
       this.append(target);
+      this.setAttribute("aria-busy", "true");
       let embedded = false;
       try {
         const result = await vegaEmbed(target, spec, options);
@@ -239,11 +244,26 @@
         if (!embedded) target.remove();
         this.classList.remove("is-rendered");
         this.classList.add("has-error");
+        this.showError();
         console.error("wagtail-vega:", error);
         this.dispatchEvent(
           new CustomEvent("wagtail-vega:error", { bubbles: true, detail: { error } })
         );
+      } finally {
+        this.removeAttribute("aria-busy");
       }
+    }
+
+    /** Tell readers the chart failed, unless a server-rendered SVG of it is
+     * still showing. The message goes when the chart next renders. */
+    showError() {
+      const children = [...this.children];
+      if (children.some((el) => el.classList.contains("wagtail-vega__ssr"))) return;
+      if (children.some((el) => el.classList.contains("wagtail-vega__error"))) return;
+      const message = document.createElement("p");
+      message.className = "wagtail-vega__error";
+      message.textContent = this.dataset.errorMessage || "Sorry, this chart couldn't be displayed.";
+      this.append(message);
     }
   }
 

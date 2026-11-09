@@ -20,6 +20,7 @@ import json
 import logging
 import secrets
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any
 
 from django import forms
@@ -42,6 +43,7 @@ from .conf import DEFAULTS, get_allowed_hosts, get_setting
 from .data import DOCUMENT_SUFFIXES, document_rows, parse_text
 from .encoders import VegaJSONEncoder
 from .spec import (
+    dataset_references,
     deep_merge,
     host_allowed,
     inject_datasets,
@@ -51,7 +53,7 @@ from .spec import (
     spec_kind,
 )
 from .themes import Theme, get_theme, resolve_css_vars, theme_choices
-from .validation import spec_problems
+from .validation import SpecProblem, spec_problems
 from .widgets import EDITOR_JS, CodeEditor
 
 logger = logging.getLogger(__name__)
@@ -65,6 +67,9 @@ class PrettyJSONField(forms.JSONField):
     def prepare_value(self, value):
         if isinstance(value, InvalidJSONInput):
             return value
+        if value is None:
+            # An empty field, not the JSON text "null"
+            return ""
         return json.dumps(value, indent=2, ensure_ascii=False, cls=self.encoder)
 
 
@@ -74,17 +79,19 @@ class JSONBlock(blocks.FieldBlock):
     editor_mode = "json"
     voyager = False
 
-    def __init__(self, required=True, help_text=None, rows=16, validators=(), **kwargs):
+    def __init__(
+        self, required=True, help_text=None, rows=16, validators=(), placeholder=None, **kwargs
+    ):
+        attrs = {"rows": rows, "class": "wagtail-vega-json"}
+        if placeholder:
+            # Shown in the code editor while it's empty
+            attrs["placeholder"] = placeholder
         self.field = PrettyJSONField(
             required=required,
             help_text=help_text,
             validators=validators,
             encoder=VegaJSONEncoder,
-            widget=CodeEditor(
-                mode=self.editor_mode,
-                attrs={"rows": rows, "class": "wagtail-vega-json"},
-                voyager=self.voyager,
-            ),
+            widget=CodeEditor(mode=self.editor_mode, attrs=attrs, voyager=self.voyager),
         )
         super().__init__(**kwargs)
 
@@ -106,6 +113,21 @@ class JSONBlock(blocks.FieldBlock):
         icon = "code"
 
 
+SPEC_PLACEHOLDER = _(
+    """Paste a spec here. For example, a bar chart of the dataset called "source":
+
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": {"name": "source"},
+  "mark": "bar",
+  "encoding": {
+    "x": {"field": "quarter", "type": "nominal"},
+    "y": {"field": "requests", "type": "quantitative"}
+  }
+}"""
+)
+
+
 class SpecBlock(JSONBlock):
     """A Vega or Vega-Lite specification, validated on save (and live, in the
     editor)."""
@@ -113,16 +135,17 @@ class SpecBlock(JSONBlock):
     editor_mode = "spec"
 
     def __init__(self, voyager=True, **kwargs):
-        # A "Build chart with Voyager" button above the editor (see
-        # widgets.CodeEditor); voyager=False leaves it out.
+        # A chart builder button above the editor (see widgets.CodeEditor);
+        # voyager=False leaves it out.
         self.voyager = voyager
         kwargs.setdefault(
             "help_text",
             _(
-                "A Vega or Vega-Lite spec in JSON. Refer to datasets by name, e.g. "
-                '"data": {"name": "source"}.'
+                "The chart's Vega-Lite or Vega spec, in JSON. Load a dataset by its name, "
+                'e.g. "data": {"name": "source"}.'
             ),
         )
+        kwargs.setdefault("placeholder", SPEC_PLACEHOLDER)
         super().__init__(**kwargs)
 
     def clean(self, value):
@@ -177,13 +200,17 @@ class DataURLBlock(blocks.CharBlock):
         super().__init__(**kwargs)
 
 
+PASTE_PLACEHOLDER = _("For example:\n\nquarter,requests\nQ1,1120\nQ2,1340")
+
+
 class PastedDataBlock(blocks.TextBlock):
     """Pasted CSV, TSV or JSON, edited in a code editor that shows tabs, doesn't
     wrap lines, and marks ragged rows and JSON errors."""
 
     @cached_property
     def field(self):
-        widget = CodeEditor(mode="data", attrs={"rows": self.rows})
+        attrs = {"rows": self.rows, "placeholder": PASTE_PLACEHOLDER}
+        widget = CodeEditor(mode="data", attrs=attrs)
         return forms.CharField(widget=widget, **self.field_options)
 
     def deconstruct(self):
@@ -226,7 +253,7 @@ class DatasetBlock(blocks.StructBlock):
     paste = PastedDataBlock(
         required=False,
         rows=8,
-        label=_("Data"),
+        label=_("Pasted data"),
         help_text=_(
             "Paste CSV, JSON, or cells copied from a spreadsheet. "
             "The first row must be the column names."
@@ -359,16 +386,33 @@ def build_tables(datasets: dict[str, Any], max_rows: int) -> list[dict]:
         columns: list[str] = []
         for row in rows:
             columns.extend(k for k in row if k not in columns)
+        shown = [[row.get(c) for c in columns] for row in rows[:max_rows]]
+        numeric = [_is_numeric_column([r[i] for r in shown]) for i in range(len(columns))]
         tables.append(
             {
                 "name": name,
                 "columns": columns,
-                "rows": [[row.get(c) for c in columns] for row in rows[:max_rows]],
+                "rows": shown,
+                # As columns and rows, with whether each column holds numbers
+                # (the template right-aligns them, so their digits line up)
+                "head": [{"name": c, "numeric": n} for c, n in zip(columns, numeric, strict=True)],
+                "cells": [
+                    [{"value": v, "numeric": n} for v, n in zip(row, numeric, strict=True)]
+                    for row in shown
+                ],
                 "truncated": len(rows) > max_rows,
                 "total": len(rows),
             }
         )
     return tables
+
+
+def _is_numeric_column(values: list[Any]) -> bool:
+    """Whether every value that isn't blank is a number (not a boolean)."""
+    present = [v for v in values if v is not None and v != ""]
+    return bool(present) and all(
+        isinstance(v, int | float | Decimal) and not isinstance(v, bool) for v in present
+    )
 
 
 class BaseChartBlock(blocks.StructBlock):
@@ -391,13 +435,21 @@ class BaseChartBlock(blocks.StructBlock):
     description = blocks.TextBlock(
         required=False,
         rows=2,
-        help_text=_("Describe what the chart shows, for people using screen readers."),
+        help_text=_(
+            "What the chart shows, and what readers should take from it, e.g. "
+            '"Requests rose every quarter, from 1,120 to 1,460." '
+            "Read out by screen readers; not shown on the page."
+        ),
     )
-    caption = blocks.CharBlock(required=False)
+    caption = blocks.CharBlock(
+        required=False,
+        help_text=_("Shown under the chart: a title, the source of the data, or notes."),
+    )
 
     class Meta:
         icon = "wagtail-vega-chart"
         label = _("Chart")
+        description = _("A chart drawn from data, with a description and a caption.")
         template = "wagtail_vega/chart.html"
         theme = None
         ssr = None
@@ -568,15 +620,78 @@ class BaseChartBlock(blocks.StructBlock):
         return context
 
 
+class ChartBlockAdapter(StructBlockAdapter):
+    """Chart blocks in the admin: a collapsed chart is labelled with its
+    title, caption or description, and the spec editor warns, as you type,
+    about datasets the spec loads that the chart doesn't have."""
+
+    js_constructor = "wagtail_vega.blocks.ChartBlock"
+
+    def js_args(self, block):
+        name, children, meta = super().js_args(block)
+        meta = {
+            **meta,
+            "wagtailVega": {
+                "missingDataset": missing_dataset_messages(),
+                "extraDatasetNames": list(getattr(block, "extra_dataset_names", ())),
+            },
+        }
+        return [name, children, meta]
+
+    @cached_property
+    def media(self):
+        return super().media + forms.Media(js=["wagtail_vega/admin/chart-block.js"])
+
+
+register(ChartBlockAdapter(), BaseChartBlock)
+
+
+def missing_dataset_messages() -> dict[str, str]:
+    """The message for a spec that loads a dataset the chart doesn't have,
+    with and without other datasets to suggest. ``%(name)s`` is the missing
+    name, ``%(names)s`` the chart's dataset names. Also used live, by the
+    admin's spec editor (chart-block.js)."""
+    return {
+        "none": _('This chart has no dataset called "%(name)s". Add one under Data.'),
+        "some": _(
+            'This chart has no dataset called "%(name)s". Use one of its datasets '
+            "(%(names)s), or add one under Data."
+        ),
+    }
+
+
+def missing_dataset_problems(spec, names) -> list[SpecProblem]:
+    """A problem for each dataset the spec loads by name that isn't in
+    ``names``."""
+    messages = missing_dataset_messages()
+    problems = []
+    for path, name in dataset_references(spec):
+        if name in names:
+            continue
+        message = messages["some" if names else "none"] % {
+            "name": name,
+            "names": ", ".join(names),
+        }
+        problems.append(SpecProblem(path, message))
+    return problems
+
+
 class ChartBlock(BaseChartBlock):
     """The editor-facing chart block: a spec plus named datasets."""
 
     field_order = ("data", "spec", "description", "caption", "theme")
 
+    #: Names of datasets a subclass adds in ``get_datasets()`` on top of the
+    #: editor's, so specs may load them without failing validation.
+    extra_dataset_names: tuple[str, ...] = ()
+
     data = blocks.ListBlock(
         DatasetBlock(),
         min_num=0,
-        help_text=_("Datasets the spec can refer to by name."),
+        help_text=_(
+            "The data for this chart. Give each dataset a different name, and use "
+            "that name in the spec."
+        ),
     )
     theme = blocks.ChoiceBlock(choices=theme_choices, required=False)
 
@@ -593,6 +708,11 @@ class ChartBlock(BaseChartBlock):
                 non_block_errors=ErrorList(
                     [ValidationError(_("Dataset names must be unique: %s") % ", ".join(duplicates))]
                 )
+            )
+        missing = missing_dataset_problems(value["spec"], [*names, *self.extra_dataset_names])
+        if missing:
+            raise StructBlockValidationError(
+                block_errors={"spec": ValidationError([str(p) for p in missing])}
             )
         return value
 

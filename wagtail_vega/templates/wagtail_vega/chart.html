@@ -1,23 +1,26 @@
 {% load i18n wagtail_vega %}{% wagtail_vega_assets %}
+{% if chart.tables %}{% translate "Sorry, this chart couldn't be displayed. Its data is under “Chart data” below." as error_message %}{% else %}{% translate "Sorry, this chart couldn't be displayed." as error_message %}{% endif %}
 <figure class="wagtail-vega" id="{{ chart.id }}"{% if chart.description %} aria-describedby="{{ chart.id }}-description"{% endif %}>
     {# The payload comes first, so it's in the DOM when the element is upgraded #}
     {{ chart.payload_script }}
-    <wagtail-vega-chart class="wagtail-vega__chart" data-payload="{{ chart.payload_id }}">
-        {% if chart.svg %}<div class="wagtail-vega__ssr">{{ chart.svg|safe }}</div>{% else %}<noscript><p class="wagtail-vega__noscript">{% translate "This chart needs JavaScript to display." %}</p></noscript>{% endif %}
+    <wagtail-vega-chart class="wagtail-vega__chart" data-payload="{{ chart.payload_id }}" data-error-message="{{ error_message|force_escape }}">
+        {% if chart.svg %}<div class="wagtail-vega__ssr">{{ chart.svg|safe }}</div>{% else %}<noscript><p class="wagtail-vega__noscript">{% if chart.tables %}{% translate "This chart needs JavaScript to display. Its data is under “Chart data” below." %}{% else %}{% translate "This chart needs JavaScript to display." %}{% endif %}</p></noscript>{% endif %}
     </wagtail-vega-chart>
     {% if chart.description %}<p class="wagtail-vega__description" id="{{ chart.id }}-description">{{ chart.description }}</p>{% endif %}
     {% if chart.tables %}
     <details class="wagtail-vega__data">
         <summary>{% translate "Chart data" %}</summary>
         {% for table in chart.tables %}
-        <table>
-            {% if chart.tables|length > 1 %}<caption>{{ table.name }}</caption>{% endif %}
-            <thead><tr>{% for column in table.columns %}<th scope="col">{{ column }}</th>{% endfor %}</tr></thead>
-            <tbody>
-                {% for row in table.rows %}<tr>{% for cell in row %}<td>{{ cell|default_if_none:"" }}</td>{% endfor %}</tr>{% endfor %}
-            </tbody>
-        </table>
-        {% if table.truncated %}<p>{% blocktranslate count total=table.total with shown=table.rows|length %}Showing {{ shown }} of {{ total }} row.{% plural %}Showing {{ shown }} of {{ total }} rows.{% endblocktranslate %}</p>{% endif %}
+        <div class="wagtail-vega__table">
+            <table>
+                {% if chart.tables|length > 1 %}<caption>{{ table.name }}</caption>{% endif %}
+                <thead><tr>{% for column in table.head %}<th scope="col"{% if column.numeric %} class="is-numeric"{% endif %}>{{ column.name }}</th>{% endfor %}</tr></thead>
+                <tbody>
+                    {% for row in table.cells %}<tr>{% for cell in row %}<td{% if cell.numeric %} class="is-numeric"{% endif %}>{{ cell.value|default_if_none:"" }}</td>{% endfor %}</tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if table.truncated %}<p class="wagtail-vega__note">{% blocktranslate count total=table.total with shown=table.rows|length %}Showing {{ shown }} of {{ total }} row.{% plural %}Showing {{ shown }} of {{ total }} rows.{% endblocktranslate %}</p>{% endif %}
         {% endfor %}
     </details>
     {% endif %}

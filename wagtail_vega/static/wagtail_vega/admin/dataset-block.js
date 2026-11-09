@@ -19,6 +19,37 @@
     return root.querySelector(`[data-contentpath="${name}"]`);
   }
 
+  /** Name the radio buttons' container after the field's label ("Source"),
+   * which Wagtail renders as a <label> that isn't linked to any input, so
+   * screen readers announce the group as well as each option. */
+  function labelRadioGroup(wrapper) {
+    const label = wrapper?.querySelector(".w-field__label");
+    const group = wrapper
+      ?.querySelector("input[type=radio]")
+      ?.closest("[data-field-input] > *");
+    if (!label || !group) return;
+    if (!label.id) label.id = `${group.id || wrapper.dataset.contentpath}-label`;
+    group.setAttribute("role", "radiogroup");
+    group.setAttribute("aria-labelledby", label.id);
+  }
+
+  /** Add an id to an element's aria-describedby. */
+  function describe(element, id) {
+    if (!element) return;
+    const ids = (element.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean);
+    if (!ids.includes(id)) element.setAttribute("aria-describedby", [...ids, id].join(" "));
+  }
+
+  /** A summary line: the symbol is decoration, so screen readers skip it. */
+  function summaryLine(symbol, text) {
+    const line = document.createElement("p");
+    const icon = document.createElement("span");
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = `${symbol} `;
+    line.append(icon, text);
+    return line;
+  }
+
   class DatasetBlockDefinition extends window.wagtailStreamField.blocks.StructBlockDefinition {
     render(placeholder, prefix, initialState, initialError) {
       const block = super.render(placeholder, prefix, initialState, initialError);
@@ -28,6 +59,7 @@
       // Toggle which inputs are visible
       const toggle = fieldWrapper(root, "source_type");
       toggle?.classList.add("wagtail-vega-source-toggle");
+      labelRadioGroup(toggle);
       const sync = () => {
         // Read the radio directly: Wagtail's RadioSelect widget shares its
         // getState() with CheckboxSelectMultiple and may return an array.
@@ -49,6 +81,10 @@
         const summary = document.createElement("div");
         summary.className = "wagtail-vega-summary";
         summary.setAttribute("aria-live", "polite");
+        if (textarea.id) {
+          summary.id = `${textarea.id}-summary`;
+          describe(textarea.wagtailVegaEditor?.view?.contentDOM, summary.id);
+        }
         paste.append(summary);
         let timer;
         const update = () => {
@@ -57,13 +93,10 @@
           summary.hidden = !result;
           if (!result) return;
           summary.classList.toggle("is-error", !result.ok);
-          const line = document.createElement("p");
-          line.textContent = `${result.ok ? "✓" : "⚠"} ${result.message}`;
-          summary.append(line);
+          summary.append(summaryLine(result.ok ? "✓" : "⚠", result.message));
           if (result.warning) {
-            const warn = document.createElement("p");
+            const warn = summaryLine("⚠", result.warning);
             warn.className = "wagtail-vega-summary__warning";
-            warn.textContent = `⚠ ${result.warning}`;
             summary.append(warn);
           }
         };

@@ -23,14 +23,79 @@
 :where(.wagtail-vega__target) {
   width: 100%;
 }
+
+/* While the chart loads, keep room for it, so the text below doesn't jump
+   when it appears. Not without JavaScript, or when a server-rendered SVG
+   already takes up the room. Set --wagtail-vega-loading-height to suit your
+   charts (0 turns it off). */
+@media (scripting: enabled) {
+  :where(.wagtail-vega__chart:not(.is-rendered, .has-error):not(:has(> .wagtail-vega__ssr))) {
+    min-height: var(--wagtail-vega-loading-height, 20rem);
+    background: color-mix(in srgb, currentColor 4%, transparent);
+    border-radius: 4px;
+  }
+}
+
+/* The "needs JavaScript" and "couldn't be displayed" messages */
+:where(.wagtail-vega__noscript, .wagtail-vega__error) {
+  margin: 0;
+  padding: 1em;
+  border: 1px dashed color-mix(in srgb, currentColor 40%, transparent);
+  border-radius: 4px;
+}
+
+:where(.wagtail-vega__data, .wagtail-vega__caption) {
+  margin-block-start: 0.5em;
+}
+:where(.wagtail-vega__data) > summary {
+  cursor: pointer;
+}
+/* Wide tables scroll sideways rather than widening the page */
+:where(.wagtail-vega__table) {
+  max-width: 100%;
+  overflow-x: auto;
+}
 :where(.wagtail-vega__data) table {
+  margin-block: 0.5em;
   border-collapse: collapse;
   font-size: 0.875em;
+}
+:where(.wagtail-vega__data) caption {
+  padding-block: 0.25em;
+  font-weight: bold;
+  text-align: start;
 }
 :where(.wagtail-vega__data) :is(th, td) {
   padding: 0.25em 0.5em;
   text-align: start;
-  border-bottom: 1px solid currentColor;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+}
+:where(.wagtail-vega__data) th {
+  vertical-align: bottom;
+  border-bottom: 2px solid currentColor;
+}
+/* Numbers line up on their last digit */
+:where(.wagtail-vega__data) .is-numeric {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+:where(.wagtail-vega__note) {
+  margin-block: 0.25em;
+  font-size: 0.875em;
+}
+
+@media print {
+  :where(.wagtail-vega__chart) {
+    overflow: visible;
+    break-inside: avoid;
+  }
+  /* A closed "Chart data" is no use on paper */
+  :where(.wagtail-vega__data:not([open])) {
+    display: none;
+  }
+  #vg-tooltip-element {
+    display: none;
+  }
 }
 
 /* vega-tooltip styles, shipped as a file so nothing is injected at runtime

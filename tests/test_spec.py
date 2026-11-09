@@ -2,6 +2,7 @@ import pytest
 
 from wagtail_vega.spec import (
     SpecError,
+    dataset_references,
     deep_merge,
     disallowed_urls,
     host_allowed,
@@ -115,6 +116,43 @@ def test_remote_data_infers_format(url, fmt, expected):
     ref = remote_data(url, fmt)
     assert ref["url"] == url
     assert ref.get("format") == expected
+
+
+# Must match datasetReferences in chart-block.js (tests/js/chart-block.test.mjs)
+def test_dataset_references_vega_lite(vl_bar):
+    assert dataset_references(vl_bar) == [(("data", "name"), "source")]
+    spec = {
+        "$schema": VL,
+        "datasets": {"own": [{"a": 1}]},
+        "layer": [
+            {"data": {"name": "source", "format": {"type": "csv"}}, "mark": "bar"},
+            {"data": {"name": "own"}, "mark": "rule"},
+            {"data": {"url": "x.csv"}, "mark": "point"},
+            {
+                "mark": "line",
+                "transform": [{"lookup": "id", "from": {"data": {"name": "extra"}, "key": "id"}}],
+                # Inline rows are data, not spec
+                "data": {"values": [{"data": {"name": "nope"}}]},
+            },
+        ],
+    }
+    assert dataset_references(spec) == [
+        (("layer", 0, "data", "name"), "source"),
+        (("layer", 3, "transform", 0, "from", "data", "name"), "extra"),
+    ]
+
+
+def test_dataset_references_vega(vg_bar):
+    # "source" has values and "filtered" a source: neither comes from outside
+    assert dataset_references(vg_bar) == []
+    vg_bar["data"][0] = {"name": "source"}
+    vg_bar["data"].append({"name": "seq", "transform": [{"type": "sequence", "start": 0}]})
+    assert dataset_references(vg_bar) == [(("data", 0, "name"), "source")]
+
+
+@pytest.mark.parametrize("spec", [None, [], {}, {"data": {"name": "x"}}, {"$schema": "x"}])
+def test_dataset_references_without_a_known_schema(spec):
+    assert dataset_references(spec) == []
 
 
 @pytest.mark.parametrize(

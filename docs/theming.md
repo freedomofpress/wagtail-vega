@@ -13,7 +13,7 @@ WAGTAIL_VEGA = {
             "config": {
                 "font": "Inter, sans-serif",
                 "background": "var(--chart-bg, white)",
-                "range": {"category": ["var(--brand)", "#2a9d8f", "#e9c46a"]},
+                "range": {"category": ["var(--brand)", "#2a9d8f", "#b45309"]},
             },
             "dark": {"axis": {"labelColor": "#ddd", "gridColor": "#444"}},
             "fallbacks": {"--brand": "#c0392b"},
@@ -106,7 +106,7 @@ Strings in a config can refer to CSS custom properties with `var(--name)` or `va
 ```python
 "config": {
     "background": "var(--chart-bg, white)",
-    "range": {"category": ["var(--brand)", "var(--accent)", "#e9c46a"]},
+    "range": {"category": ["var(--brand)", "var(--accent)", "#b45309"]},
 }
 ```
 
@@ -200,8 +200,12 @@ The built-in theme is passed to vega-embed as its `theme` option, so it's applie
 | `.wagtail-vega__target` | The element vega-embed draws into. |
 | `.wagtail-vega__ssr` | The server-rendered SVG, before JavaScript replaces it. |
 | `.wagtail-vega__noscript` | The "needs JavaScript" message. |
+| `.wagtail-vega__error` | The "couldn't be displayed" message, added if the chart fails. |
 | `.wagtail-vega__description` | The description. Visually hidden, but read by screen readers. |
 | `.wagtail-vega__data` | The `<details>` element holding the data table. |
+| `.wagtail-vega__table` | The box around each table, which scrolls sideways if the table is too wide. |
+| `.is-numeric` | The `<th>` and `<td>` elements of columns of numbers, which are right-aligned. |
+| `.wagtail-vega__note` | The "Showing … of … rows." note under a long table. |
 | `.wagtail-vega__caption` | The `<figcaption>`. |
 
 For example:
@@ -214,10 +218,12 @@ For example:
   font-size: 0.875rem;
   color: var(--muted);
 }
-.wagtail-vega__chart.has-error::after {
-  content: "This chart couldn't be displayed.";
+.wagtail-vega__error {
+  color: var(--muted);
 }
 ```
+
+The stylesheet also keeps room for charts while they load (see [](frontend.md#the-wagtail-vega-chart-element)), and has print styles: charts aren't split across pages, and a closed "Chart data" isn't printed.
 
 Tooltips use the `#vg-tooltip-element` styles from `wagtail-vega.css`, which are for a light background. For dark tooltips, override them in your CSS:
 
