@@ -127,3 +127,15 @@ test("makeLogger reports data failures and still logs them", () => {
   assert.deepEqual(errors, ["Loading failed /x.csv 404", "Data ingestion failed /y.csv"]);
   assert.equal(logger.warned.length, 3);
 });
+
+test("useCspSafeFormats leaves inline rows alone", () => {
+  const spec = {
+    data: { values: [{ url: "https://example.org/report.csv", n: 1 }] },
+    datasets: { links: [{ url: "/files/a.tsv" }] },
+    layer: [{ data: { url: "/d.csv" } }],
+  };
+  const out = plain(useCspSafeFormats(spec));
+  assert.deepEqual(out.data, spec.data);
+  assert.deepEqual(out.datasets, spec.datasets);
+  assert.equal(out.layer[0].data.format.type, "wagtail-vega-csv");
+});

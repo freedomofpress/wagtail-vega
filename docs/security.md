@@ -50,7 +50,7 @@ The spec field's **Build chart from data** button (see {doc}`editor-experience`)
 
 - It reads the chart's data from the form. Documents are read through `/admin/wagtail-vega/document-rows/?id=…` ({py:func}`wagtail_vega.views.document_rows`), which needs permission to access the admin and to choose (or change) the document. URL datasets are fetched by the admin page, and only from the allowlist, checked on the URL as the browser resolves it.
 - The spec it writes refers to the dataset by name, so no data is copied into it. It's checked with the live validation endpoint above before it's written to the field, and again when the page is saved.
-- Its preview loads the vendored vega, vega-lite, vega-embed and vega-interpreter from your static files the first time the builder opens, and draws with the interpreter, as in {ref}`CSP-safe mode <csp-safe>`. It injects no styles.
+- Its preview loads the vendored vega, vega-lite and vega-embed from your static files the first time the builder opens, and draws with vega-embed's bundled interpreter, as in {ref}`CSP-safe mode <csp-safe>`. It injects no styles.
 
 :::{note}
 **If your admin has a Content Security Policy**, the builder needs nothing beyond what the admin itself needs: `script-src` and `style-src` for your static files (no `'unsafe-eval'` or `'unsafe-inline'` for the builder), and `connect-src 'self'` for the validation and document endpoints. Add the hosts of any URL datasets to `connect-src`, since the admin page fetches them for the builder.
@@ -90,7 +90,7 @@ WAGTAIL_VEGA = {"CSP_SAFE": True}
 
 In CSP-safe mode:
 
-- `{% wagtail_vega_assets %}` also loads `vega-interpreter.js`, and charts are rendered with `ast: true` and the [vega-interpreter](https://github.com/vega/vega/tree/main/packages/vega-interpreter) expression evaluator, which doesn't use `eval`.
+- Charts are rendered with `ast: true`, so vega-embed evaluates expressions with the [vega-interpreter](https://github.com/vega/vega/tree/main/packages/vega-interpreter) it bundles, which doesn't use `eval`. No extra script is needed.
 - Vega's `csv`, `tsv` and `dsv` data format readers are replaced with an eval-free parser.
 
 With it on, charts work with a policy like this one, which the test suite checks:

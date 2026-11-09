@@ -81,4 +81,4 @@ See {doc}`frontend` for the details.
 : The template tag that outputs the CSS and scripts. Chart blocks call it themselves.
 
 Vendored libraries
-: Vega 6, Vega-Lite 6, vega-embed 7 and vega-interpreter, served from your static files. The exact versions are in `wagtail_vega/static/wagtail_vega/vendor/VERSIONS.json`.
+: Vega 6, Vega-Lite 6 and vega-embed 7 (which bundles vega-interpreter), served from your static files. The exact versions are in `wagtail_vega/static/wagtail_vega/vendor/VERSIONS.json`.

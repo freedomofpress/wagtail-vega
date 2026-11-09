@@ -66,3 +66,28 @@ def test_ssr_base_urls_normalised(vega_settings, vl_bar):
     vega_settings["ALLOWED_DATA_HOSTS"] = ["ok.org"]
     vl_bar["data"] = {"url": "/\\evil.example/x.csv"}
     assert ssr.allowed_base_urls(vl_bar) == []
+
+
+def test_builtin_theme_applies_to_vega_and_vega_lite(vega_settings, vl_bar, vg_bar):
+    """vl-convert only takes named themes for Vega-Lite; we merge the config
+    ourselves so Vega specs match the browser too (#21)."""
+    dark = ssr.builtin_theme("dark")
+    assert dark["background"] == "#333"
+    for spec, kind in ((vl_bar, "vega-lite"), (vg_bar, "vega")):
+        spec = {**spec, "data": spec["data"]}
+        if kind == "vega-lite":
+            spec["datasets"] = {"source": [{"a": "x", "b": 1}]}
+        svg = ssr.render_svg(spec, kind, vega_theme="dark")
+        assert svg and "#333" in svg, kind
+
+
+def test_spec_config_wins_over_builtin_theme(vega_settings, vl_bar):
+    vl_bar["datasets"] = {"source": [{"a": "x", "b": 1}]}
+    vl_bar["config"] = {"background": "#123456"}
+    svg = ssr.render_svg(vl_bar, "vega-lite", vega_theme="dark")
+    assert "#123456" in svg and "#333" not in svg
+
+
+def test_unknown_builtin_theme_is_logged(caplog):
+    assert ssr.builtin_theme("nope") is None
+    assert "unknown built-in theme 'nope'" in caplog.text

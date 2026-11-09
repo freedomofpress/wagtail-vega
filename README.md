@@ -82,7 +82,7 @@ WAGTAIL_VEGA_CSP_SAFE=1 WAGTAIL_VEGA_SSR=1 .venv/bin/python manage.py runserver 
 WAGTAIL_VEGA_SANDBOX_AUTOLOGIN=1 .venv/bin/python manage.py runserver  # skip login (for headless screenshots)
 ```
 
-To update the vendored Vega JS and schemas, edit the versions in `scripts/vendor.py` and run it. Each tarball is checked against npm's integrity hash. The admin code editor (CodeMirror 6) is bundled reproducibly from pinned npm packages with `npm ci && npm run build`; the output is committed, so installing the package needs no Node.
+The Vega libraries, their JSON schemas and the admin code editor (CodeMirror 6) come from npm packages pinned in `package.json` and `package-lock.json`. `npm ci --ignore-scripts && npm run build` copies and bundles them into the package. The output is committed, so installing the Python package needs no Node, and CI checks that it matches the pinned packages.
 
 See [Testing and contributing](https://wagtail-vega.readthedocs.io/en/latest/contributing.html) for more.
 

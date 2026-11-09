@@ -186,7 +186,6 @@ def test_spec_widget_has_builder_button(vega_settings):
         "/static/wagtail_vega/vendor/vega.min.js",
         "/static/wagtail_vega/vendor/vega-lite.min.js",
         "/static/wagtail_vega/vendor/vega-embed.min.js",
-        "/static/wagtail_vega/vendor/vega-interpreter.js",
         "/static/wagtail_vega/wagtail-vega.js",
     ]
     assert config["stylesheet"] == "/static/wagtail_vega/wagtail-vega.css"

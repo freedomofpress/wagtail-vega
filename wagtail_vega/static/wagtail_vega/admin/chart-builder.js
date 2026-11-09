@@ -40,7 +40,8 @@
  * data-format.js (as the server will), documents through the document-rows
  * endpoint, and URL datasets are fetched by the browser, from allowed hosts
  * only. The Vega libraries load once, the first time a chart is drawn, and
- * draw with vega-interpreter, so the admin needs no 'unsafe-eval'.
+ * draw with vega-embed's bundled vega-interpreter (ast: true), so the admin
+ * needs no 'unsafe-eval'.
  *
  * All text comes from the server (builder_strings.py), looked up by key.
  * Needs data-format.js, code-editor.js and chart-spec.js.
@@ -233,11 +234,10 @@
 
   let libraries = null;
 
-  /** Load vega, vega-lite, vega-embed, vega-interpreter and wagtail-vega.js
-   * (for var() resolution) once, in order. */
+  /** Load vega, vega-lite, vega-embed and wagtail-vega.js (for var()
+   * resolution) once, in order. */
   function loadLibraries(config) {
-    // TODO-23: vegaInterpreter. main (#25) drops vega-interpreter.js: stop waiting for it
-    if (window.vegaEmbed && window.vegaInterpreter && window.wagtailVega?._internal) {
+    if (window.vegaEmbed && window.wagtailVega?._internal) {
       return Promise.resolve();
     }
     if (!libraries) {
@@ -347,8 +347,6 @@
       defaultStyle: false,
       tooltip: { disableDefaultStyle: true },
       ast: true,
-      // TODO-23: vegaInterpreter. main (#25) drops this: keep ast: true, remove expr
-      expr: window.vegaInterpreter.expressionInterpreter,
       logger,
       loader: internal.makeLoader ? internal.makeLoader(config.allowedHosts) : undefined,
     };

@@ -27,11 +27,12 @@ classifiers = [
 dependencies = ["wagtail>=7.4", "jsonschema>=4.18"]
 
 [project.optional-dependencies]
-ssr = ["vl-convert-python>=1.7"]
+# vl-convert 2.0 reworks its config API; cap until it's released and tested
+ssr = ["vl-convert-python>=1.7,<2"]
 test = [
     "pytest>=8",
     "pytest-django>=4.9",
-    "vl-convert-python>=1.7",
+    "vl-convert-python>=1.7,<2",
     "pytest-playwright>=0.7",
     "pytest-timeout>=2.3",
 ]

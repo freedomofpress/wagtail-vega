@@ -27,8 +27,8 @@ jobs:
           # Wagtail's nightly build, to catch upcoming breakage early
           - { python: "3.14", wagtail: "nightly", django: "6.1", experimental: true }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
           allow-prereleases: true
@@ -49,7 +49,7 @@ jobs:
           DATABASE_NAME: ":memory:"
       - name: Upload Playwright traces
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-${{ matrix.python }}-${{ matrix.wagtail }}-${{ matrix.django }}
           path: test-results/
@@ -58,22 +58,23 @@ jobs:
   js:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: npm test
-      - name: Check the vendored CodeMirror bundle is reproducible
+      - name: Check the vendored JS and schemas match the pinned npm packages
         run: |
-          npm ci
+          npm ci --ignore-scripts
           npm run build
-          git diff --exit-code wagtail_vega/static/wagtail_vega/admin/vendor/
+          git diff --exit-code wagtail_vega/static/wagtail_vega/vendor/ \
+            wagtail_vega/static/wagtail_vega/admin/vendor/ wagtail_vega/schemas/
 
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       - run: pip install ruff
@@ -82,8 +83,8 @@ jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip

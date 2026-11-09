@@ -192,15 +192,22 @@ def dataset_references(spec: Any) -> list[tuple[JSONPath, str]]:
     return found
 
 
+# Keys whose contents are inline data rows, not spec
+INLINE_DATA_KEYS = frozenset({"values", "datasets"})
+
+
 def iter_url_paths(spec: Any, path: JSONPath = ()) -> Iterator[tuple[JSONPath, str]]:
     """Yield ``(path, url)`` for every literal ``url`` string in the spec (data
     sources, images), in document order. ``path`` is the keys and indices
-    leading to the URL, e.g. ``("data", "url")``."""
+    leading to the URL, e.g. ``("data", "url")``.
+
+    Inline data (``values`` and ``datasets``) is skipped: a ``url`` column in
+    the rows is data, not something the chart loads."""
     if isinstance(spec, dict):
         for key, value in spec.items():
             if key == "url" and isinstance(value, str):
                 yield (*path, key), value
-            else:
+            elif key not in INLINE_DATA_KEYS:
                 yield from iter_url_paths(value, (*path, key))
     elif isinstance(spec, list):
         for i, value in enumerate(spec):

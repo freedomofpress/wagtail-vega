@@ -31,7 +31,6 @@ BUILDER_PREVIEW_JS = [
     "wagtail_vega/vendor/vega.min.js",
     "wagtail_vega/vendor/vega-lite.min.js",
     "wagtail_vega/vendor/vega-embed.min.js",
-    "wagtail_vega/vendor/vega-interpreter.js",
     "wagtail_vega/wagtail-vega.js",
 ]
 BUILDER_PREVIEW_CSS = "wagtail_vega/wagtail-vega.css"

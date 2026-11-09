@@ -4,8 +4,6 @@ from django import template
 from django.templatetags.static import static
 from django.utils.html import format_html, format_html_join
 
-from ..conf import get_setting
-
 register = template.Library()
 
 SCRIPTS = [
@@ -17,8 +15,6 @@ SCRIPTS = [
 
 def _scripts() -> list[str]:
     scripts = list(SCRIPTS)
-    if get_setting("CSP_SAFE"):
-        scripts.append("wagtail_vega/vendor/vega-interpreter.js")
     scripts.append("wagtail_vega/wagtail-vega.js")
     return [static(s) for s in scripts]
 
