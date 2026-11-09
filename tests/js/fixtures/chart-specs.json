@@ -1,0 +1,499 @@
+{
+  "_comment": "Shared by tests/js/chart-spec.test.mjs (the builder makes each chart's 'expected' spec from its 'recipe', and opens every 'expected' and 'roundTrip' spec and writes it back unchanged) and tests/test_chart_builder.py (every spec here passes the checks that saving runs).",
+  "rows": [
+    {"quarter": "Q1", "agency": "FBI", "requests": 1120, "date": "2024-01-01", "temp": 5.5, "wind": 3.1, "weather": "rain"},
+    {"quarter": "Q1", "agency": "DHS", "requests": 980, "date": "2024-01-02", "temp": 7.2, "wind": 2.4, "weather": "sun"},
+    {"quarter": "Q2", "agency": "FBI", "requests": 1340, "date": "2024-04-01", "temp": 14.1, "wind": 4.0, "weather": "rain"},
+    {"quarter": "Q2", "agency": "DHS", "requests": 1095, "date": "2024-04-02", "temp": 15.0, "wind": 1.2, "weather": "fog"},
+    {"quarter": "Q3", "agency": "FBI", "requests": 1110, "date": "2024-07-01", "temp": 24.3, "wind": 2.2, "weather": "sun"},
+    {"quarter": "Q3", "agency": "DHS", "requests": 1230, "date": "2024-07-02", "temp": 26.8, "wind": 0.9, "weather": "sun"}
+  ],
+  "charts": [
+    {
+      "name": "bar",
+      "recipe": {"mark": "bar", "channels": {"x": {"field": "quarter"}, "y": {"field": "requests", "aggregate": "sum"}}},
+      "expected": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": {"type": "bar", "tooltip": true},
+        "encoding": {
+          "x": {"field": "quarter", "type": "nominal"},
+          "y": {"field": "requests", "type": "quantitative", "aggregate": "sum"}
+        }
+      }
+    },
+    {
+      "name": "horizontal bar, sorted by value",
+      "recipe": {"mark": "bar", "channels": {"x": {"field": "requests", "aggregate": "sum"}, "y": {"field": "quarter", "sort": "-x"}}},
+      "expected": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": {"type": "bar", "tooltip": true},
+        "encoding": {
+          "x": {"field": "requests", "type": "quantitative", "aggregate": "sum"},
+          "y": {"field": "quarter", "type": "nominal", "sort": "-x"}
+        }
+      }
+    },
+    {
+      "name": "grouped bar",
+      "recipe": {"mark": "bar", "arrangement": "grouped", "channels": {"x": {"field": "quarter"}, "y": {"field": "requests", "aggregate": "sum"}, "color": {"field": "agency"}}},
+      "expected": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": {"type": "bar", "tooltip": true},
+        "encoding": {
+          "x": {"field": "quarter", "type": "nominal"},
+          "y": {"field": "requests", "type": "quantitative", "aggregate": "sum"},
+          "xOffset": {"field": "agency"},
+          "color": {"field": "agency", "type": "nominal"}
+        }
+      }
+    },
+    {
+      "name": "grouped horizontal bar",
+      "recipe": {"mark": "bar", "arrangement": "grouped", "channels": {"x": {"field": "requests", "aggregate": "sum"}, "y": {"field": "quarter"}, "color": {"field": "agency"}}},
+      "expected": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": {"type": "bar", "tooltip": true},
+        "encoding": {
+          "x": {"field": "requests", "type": "quantitative", "aggregate": "sum"},
+          "y": {"field": "quarter", "type": "nominal"},
+          "yOffset": {"field": "agency"},
+          "color": {"field": "agency", "type": "nominal"}
+        }
+      }
+    },
+    {
+      "name": "stacked bar",
+      "recipe": {"mark": "bar", "channels": {"x": {"field": "quarter"}, "y": {"field": "requests", "aggregate": "sum"}, "color": {"field": "agency"}}},
+      "expected": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": {"type": "bar", "tooltip": true},
+        "encoding": {
+          "x": {"field": "quarter", "type": "nominal"},
+          "y": {"field": "requests", "type": "quantitative", "aggregate": "sum"},
+          "color": {"field": "agency", "type": "nominal"}
+        }
+      }
+    },
+    {
+      "name": "normalised stacked bar",
+      "recipe": {"mark": "bar", "arrangement": "normalize", "channels": {"x": {"field": "quarter"}, "y": {"field": "requests", "aggregate": "sum"}, "color": {"field": "agency"}}},
+      "expected": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": {"type": "bar", "tooltip": true},
+        "encoding": {
+          "x": {"field": "quarter", "type": "nominal"},
+          "y": {"field": "requests", "type": "quantitative", "aggregate": "sum", "stack": "normalize"},
+          "color": {"field": "agency", "type": "nominal"}
+        }
+      }
+    },
+    {
+      "name": "count of rows",
+      "recipe": {"mark": "bar", "channels": {"x": {"field": "weather"}, "y": {"field": "__count__"}}},
+      "expected": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": {"type": "bar", "tooltip": true},
+        "encoding": {
+          "x": {"field": "weather", "type": "nominal"},
+          "y": {"type": "quantitative", "aggregate": "count"}
+        }
+      }
+    },
+    {
+      "name": "histogram",
+      "recipe": {"mark": "bar", "channels": {"x": {"field": "temp", "bin": true}, "y": {"field": "__count__"}}},
+      "expected": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": {"type": "bar", "tooltip": true},
+        "encoding": {
+          "x": {"field": "temp", "type": "quantitative", "bin": true},
+          "y": {"type": "quantitative", "aggregate": "count"}
+        }
+      }
+    },
+    {
+      "name": "line over time",
+      "recipe": {"mark": "line", "channels": {"x": {"field": "date"}, "y": {"field": "temp"}}},
+      "expected": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": {"type": "line", "tooltip": true},
+        "encoding": {
+          "x": {"field": "date", "type": "temporal"},
+          "y": {"field": "temp", "type": "quantitative"}
+        }
+      }
+    },
+    {
+      "name": "line by month, with points (UTC for dates without times)",
+      "recipe": {"mark": "line", "point": true, "channels": {"x": {"field": "date", "timeUnit": "yearmonth"}, "y": {"field": "temp", "aggregate": "mean"}}},
+      "expected": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": {"type": "line", "tooltip": true, "point": true},
+        "encoding": {
+          "x": {"field": "date", "type": "temporal", "timeUnit": "utcyearmonth"},
+          "y": {"field": "temp", "type": "quantitative", "aggregate": "mean"}
+        }
+      }
+    },
+    {
+      "name": "multi-series line",
+      "recipe": {"mark": "line", "channels": {"x": {"field": "date"}, "y": {"field": "requests"}, "color": {"field": "agency"}}},
+      "expected": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": {"type": "line", "tooltip": true},
+        "encoding": {
+          "x": {"field": "date", "type": "temporal"},
+          "y": {"field": "requests", "type": "quantitative"},
+          "color": {"field": "agency", "type": "nominal"}
+        }
+      }
+    },
+    {
+      "name": "stacked area",
+      "recipe": {"mark": "area", "channels": {"x": {"field": "date", "timeUnit": "yearquarter"}, "y": {"field": "requests", "aggregate": "sum"}, "color": {"field": "agency"}}},
+      "expected": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": {"type": "area", "tooltip": true},
+        "encoding": {
+          "x": {"field": "date", "type": "temporal", "timeUnit": "utcyearquarter"},
+          "y": {"field": "requests", "type": "quantitative", "aggregate": "sum"},
+          "color": {"field": "agency", "type": "nominal"}
+        }
+      }
+    },
+    {
+      "name": "streamgraph",
+      "recipe": {"mark": "area", "arrangement": "center", "channels": {"x": {"field": "date"}, "y": {"field": "requests", "aggregate": "sum"}, "color": {"field": "agency"}}},
+      "expected": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": {"type": "area", "tooltip": true},
+        "encoding": {
+          "x": {"field": "date", "type": "temporal"},
+          "y": {"field": "requests", "type": "quantitative", "aggregate": "sum", "stack": "center"},
+          "color": {"field": "agency", "type": "nominal"}
+        }
+      }
+    },
+    {
+      "name": "overlapping areas",
+      "recipe": {"mark": "area", "arrangement": "none", "tooltip": false, "channels": {"x": {"field": "date"}, "y": {"field": "requests"}, "color": {"field": "agency"}}},
+      "expected": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": "area",
+        "encoding": {
+          "x": {"field": "date", "type": "temporal"},
+          "y": {"field": "requests", "type": "quantitative", "stack": null},
+          "color": {"field": "agency", "type": "nominal"}
+        }
+      }
+    },
+    {
+      "name": "scatter plot with colour and size",
+      "recipe": {"mark": "point", "channels": {"x": {"field": "temp"}, "y": {"field": "wind"}, "color": {"field": "weather"}, "size": {"field": "requests"}}},
+      "expected": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": {"type": "point", "tooltip": true},
+        "encoding": {
+          "x": {"field": "temp", "type": "quantitative"},
+          "y": {"field": "wind", "type": "quantitative"},
+          "color": {"field": "weather", "type": "nominal"},
+          "size": {"field": "requests", "type": "quantitative"}
+        }
+      }
+    },
+    {
+      "name": "pie",
+      "recipe": {"mark": "arc", "channels": {"theta": {"field": "requests", "aggregate": "sum"}, "color": {"field": "agency"}}},
+      "expected": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": {"type": "arc", "tooltip": true},
+        "encoding": {
+          "theta": {"field": "requests", "type": "quantitative", "aggregate": "sum"},
+          "color": {"field": "agency", "type": "nominal"}
+        }
+      }
+    },
+    {
+      "name": "donut",
+      "recipe": {"mark": "arc", "donut": true, "channels": {"theta": {"field": "requests", "aggregate": "sum"}, "color": {"field": "weather"}}},
+      "expected": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": {"type": "arc", "tooltip": true, "innerRadius": 50},
+        "encoding": {
+          "theta": {"field": "requests", "type": "quantitative", "aggregate": "sum"},
+          "color": {"field": "weather", "type": "nominal"}
+        }
+      }
+    },
+    {
+      "name": "heatmap",
+      "recipe": {"mark": "rect", "channels": {"x": {"field": "quarter"}, "y": {"field": "agency"}, "color": {"field": "requests", "aggregate": "sum"}}},
+      "expected": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": {"type": "rect", "tooltip": true},
+        "encoding": {
+          "x": {"field": "quarter", "type": "nominal"},
+          "y": {"field": "agency", "type": "nominal"},
+          "color": {"field": "requests", "type": "quantitative", "aggregate": "sum"}
+        }
+      }
+    },
+    {
+      "name": "column and row facets",
+      "recipe": {"mark": "bar", "width": "", "channels": {"x": {"field": "agency"}, "y": {"field": "requests", "aggregate": "sum"}, "column": {"field": "quarter"}, "row": {"field": "weather", "sort": "descending"}}},
+      "expected": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "data": {"name": "source"},
+        "mark": {"type": "bar", "tooltip": true},
+        "encoding": {
+          "x": {"field": "agency", "type": "nominal"},
+          "y": {"field": "requests", "type": "quantitative", "aggregate": "sum"},
+          "column": {"field": "quarter", "type": "nominal"},
+          "row": {"field": "weather", "type": "nominal", "sort": "descending"}
+        }
+      }
+    },
+    {
+      "name": "tick strip plot",
+      "recipe": {"mark": "tick", "channels": {"x": {"field": "temp"}, "y": {"field": "weather", "sort": "none"}}},
+      "expected": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": {"type": "tick", "tooltip": true},
+        "encoding": {
+          "x": {"field": "temp", "type": "quantitative"},
+          "y": {"field": "weather", "type": "nominal", "sort": null}
+        }
+      }
+    },
+    {
+      "name": "titles, fixed size and an ordinal time unit",
+      "recipe": {
+        "mark": "bar",
+        "title": "Requests by month",
+        "width": 480,
+        "height": 240,
+        "channels": {
+          "x": {"field": "date", "type": "ordinal", "timeUnit": "month", "title": "Month"},
+          "y": {"field": "requests", "aggregate": "sum", "title": "Requests"}
+        }
+      },
+      "expected": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "title": "Requests by month",
+        "width": 480,
+        "height": 240,
+        "data": {"name": "source"},
+        "mark": {"type": "bar", "tooltip": true},
+        "encoding": {
+          "x": {"field": "date", "type": "ordinal", "timeUnit": "utcmonth", "title": "Month"},
+          "y": {"field": "requests", "type": "quantitative", "aggregate": "sum", "title": "Requests"}
+        }
+      }
+    }
+  ],
+  "roundTrip": [
+    {
+      "name": "the sandbox's grouped bars (xOffset without a type, a hidden axis title)",
+      "kept": ["encoding.x.title"],
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "title": "Requests by quarter",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": {"type": "bar", "tooltip": true},
+        "encoding": {
+          "x": {"field": "quarter", "type": "nominal", "title": null},
+          "y": {"field": "requests", "type": "quantitative"},
+          "color": {"field": "agency", "type": "nominal"},
+          "xOffset": {"field": "agency"}
+        }
+      }
+    },
+    {
+      "name": "line with points and a UTC time unit",
+      "kept": [],
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "title": "Donations",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": {"type": "line", "point": true},
+        "encoding": {
+          "x": {"field": "date", "type": "temporal", "timeUnit": "utcyearmonth"},
+          "y": {"field": "temp", "type": "quantitative"}
+        }
+      }
+    },
+    {
+      "name": "count with no type, local time unit, plain mark",
+      "kept": [],
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "title": "Weather",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": "bar",
+        "encoding": {
+          "x": {"field": "date", "timeUnit": "month", "type": "ordinal"},
+          "y": {"aggregate": "count", "type": "quantitative"},
+          "color": {"field": "weather", "type": "nominal"}
+        }
+      }
+    },
+    {
+      "name": "fields with no type, and no width",
+      "kept": [],
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "data": {"name": "source"},
+        "mark": "point",
+        "encoding": {
+          "x": {"field": "quarter"},
+          "y": {"field": "requests", "aggregate": "mean"},
+          "size": {"aggregate": "count"}
+        }
+      }
+    },
+    {
+      "name": "everything the builder doesn't edit is kept",
+      "kept": [
+        "description", "transform", "params", "config", "autosize",
+        "mark.cornerRadiusEnd", "mark.opacity",
+        "encoding.x.axis", "encoding.y.scale", "encoding.y.axis", "encoding.color.legend", "encoding.color.scale",
+        "encoding.tooltip", "encoding.opacity"
+      ],
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "title": "Share of requests",
+        "description": "Requests per quarter, by agency.",
+        "width": "container",
+        "height": 300,
+        "autosize": {"type": "fit", "contains": "padding"},
+        "data": {"name": "source"},
+        "transform": [{"calculate": "datum.requests / 1000", "as": "thousands"}],
+        "params": [{"name": "pick", "select": {"type": "point", "fields": ["agency"]}, "bind": "legend"}],
+        "mark": {"type": "bar", "tooltip": true, "cornerRadiusEnd": 3, "opacity": 0.9},
+        "encoding": {
+          "x": {"field": "quarter", "type": "ordinal", "sort": "descending", "axis": {"labelAngle": 0}},
+          "y": {"field": "thousands", "type": "quantitative", "aggregate": "sum", "title": "Thousands", "scale": {"zero": true}, "axis": {"format": ",.1f"}},
+          "color": {"field": "agency", "type": "nominal", "legend": {"orient": "bottom"}, "scale": {"scheme": "tableau10"}},
+          "tooltip": [{"field": "quarter"}, {"field": "thousands", "aggregate": "sum", "format": ",.1f"}],
+          "opacity": {"condition": {"param": "pick", "value": 1}, "value": 0.3}
+        },
+        "config": {"axis": {"grid": false}}
+      }
+    },
+    {
+      "name": "values the controls can't show are kept, and shown as Custom",
+      "kept": [
+        "title", "width",
+        "encoding.x.sort", "encoding.x.timeUnit", "encoding.y.aggregate", "encoding.y.stack",
+        "encoding.color.bin"
+      ],
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "title": {"text": "Custom title", "subtitle": "With a subtitle"},
+        "width": {"step": 30},
+        "data": {"name": "source"},
+        "mark": "bar",
+        "encoding": {
+          "x": {"field": "date", "type": "ordinal", "timeUnit": {"unit": "month", "step": 2}, "sort": ["Q3", "Q1", "Q2"]},
+          "y": {"field": "requests", "type": "quantitative", "aggregate": "variance", "stack": "zero"},
+          "color": {"field": "temp", "type": "ordinal", "bin": {"maxbins": 4}}
+        }
+      }
+    },
+    {
+      "name": "a pie with its own inner radius and a stacked angle",
+      "kept": ["encoding.theta.stack", "encoding.color.scale"],
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "data": {"name": "source"},
+        "mark": {"type": "arc", "innerRadius": 80},
+        "encoding": {
+          "theta": {"field": "requests", "type": "quantitative", "aggregate": "sum", "stack": true},
+          "color": {"field": "agency", "type": "nominal", "scale": {"scheme": "set2"}}
+        }
+      }
+    },
+    {
+      "name": "facets with headers, and a colour that's a constant",
+      "kept": ["encoding.column.header", "encoding.color"],
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "data": {"name": "source"},
+        "mark": "line",
+        "encoding": {
+          "x": {"field": "date", "type": "temporal"},
+          "y": {"field": "temp", "type": "quantitative"},
+          "color": {"value": "#8a37b0"},
+          "column": {"field": "weather", "type": "nominal", "header": {"labelAngle": 0}, "title": "Weather"}
+        }
+      }
+    },
+    {
+      "name": "an offset that isn't the colour field is kept as it is",
+      "kept": ["encoding.xOffset"],
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": "bar",
+        "encoding": {
+          "x": {"field": "quarter", "type": "nominal"},
+          "y": {"field": "requests", "type": "quantitative"},
+          "xOffset": {"field": "weather", "type": "nominal"}
+        }
+      }
+    },
+    {
+      "name": "an older Vega-Lite $schema is kept",
+      "kept": [],
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+        "width": "container",
+        "data": {"name": "source"},
+        "mark": "tick",
+        "encoding": {"x": {"field": "temp", "type": "quantitative"}}
+      }
+    }
+  ]
+}

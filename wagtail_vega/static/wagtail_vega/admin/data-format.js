@@ -123,7 +123,7 @@
   }
 
   /** Rows (objects) from CSV/TSV/JSON text, typed exactly as the server's
-   * wagtail_vega.data.parse_text does, for the chart builder (Voyager).
+   * wagtail_vega.data.parse_text does, for the chart builder.
    * `format` is "csv", "tsv", "json", or empty to detect it. Throws on JSON
    * that isn't an array of rows. Delimited text works like csv.DictReader:
    * short rows are padded with null and extra cells are dropped. */

@@ -2,7 +2,7 @@
 
 [Vega](https://vega.github.io/vega/) and [Vega-Lite](https://vega.github.io/vega-lite/) chart blocks for Wagtail StreamFields.
 
-- **Editors** paste a Vega or Vega-Lite spec and attach data: pasted CSV, JSON or spreadsheet cells, a document, or a URL. They can create new kinds of chart without changing any code, in a code editor that underlines errors in the spec and data as they type, or build a chart visually with Vega Voyager.
+- **Editors** paste a Vega or Vega-Lite spec and attach data: pasted CSV, JSON or spreadsheet cells, a document, or a URL. They can create new kinds of chart without changing any code, in a code editor that underlines errors in the spec and data as they type, or build a chart with the keyboard-accessible chart builder.
 - **Developers** subclass the block to supply data from anywhere, e.g. the database.
 - **Themes** are Vega `config` objects. They can have dark-mode variants and can pull colours from your site's CSS custom properties.
 - **Privacy and security:** the Vega libraries are vendored, so there are no CDN requests. Data hosts are allowlisted, and a CSP-safe mode works without `unsafe-eval`, inline scripts or inline styles.
@@ -89,7 +89,6 @@ See [Testing and contributing](https://wagtail-vega.readthedocs.io/en/latest/con
 ## Roadmap
 
 - Live preview next to the code editor.
-- A maintained, keyboard-accessible visual chart builder to replace Voyager.
 - Developer-defined chart templates that expose only some options to editors.
 - Reusable dataset snippets.
 - A JSON endpoint for large datasets.

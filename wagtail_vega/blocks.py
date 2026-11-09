@@ -77,7 +77,7 @@ class JSONBlock(blocks.FieldBlock):
     """JSON in a code editor, stored as native JSON in the StreamField."""
 
     editor_mode = "json"
-    voyager = False
+    builder = False
 
     def __init__(
         self, required=True, help_text=None, rows=16, validators=(), placeholder=None, **kwargs
@@ -91,7 +91,7 @@ class JSONBlock(blocks.FieldBlock):
             help_text=help_text,
             validators=validators,
             encoder=VegaJSONEncoder,
-            widget=CodeEditor(mode=self.editor_mode, attrs=attrs, voyager=self.voyager),
+            widget=CodeEditor(mode=self.editor_mode, attrs=attrs, builder=self.builder),
         )
         super().__init__(**kwargs)
 
@@ -134,10 +134,10 @@ class SpecBlock(JSONBlock):
 
     editor_mode = "spec"
 
-    def __init__(self, voyager=True, **kwargs):
-        # A chart builder button above the editor (see widgets.CodeEditor);
-        # voyager=False leaves it out.
-        self.voyager = voyager
+    def __init__(self, builder=True, **kwargs):
+        # A "Build chart from data" button above the editor (see
+        # widgets.CodeEditor); builder=False leaves it out.
+        self.builder = builder
         kwargs.setdefault(
             "help_text",
             _(

@@ -78,7 +78,7 @@ test("summarise: errors", () => {
 });
 
 // parseRows / coerce must match wagtail_vega.data (same cases as tests/test_data.py),
-// so Voyager sees the values the chart will.
+// so the chart builder sees the values the chart will.
 test("parseRows infers types like parse_delimited", () => {
   assert.deepEqual(plain(parseRows("a,b,c,d\nx,1,2.5,true\ny,,nan,2024-01-01\n")), [
     { a: "x", b: 1, c: 2.5, d: true },

@@ -152,10 +152,14 @@
             opts?.maxLength,
           );
 
+        const extra = this.meta?.wagtailVega?.extraDatasetNames || [];
+        // The chart builder (chart-builder.js) lists these too
+        const root = block.container?.[0] ?? block.container;
+        if (extra.length) root?.setAttribute?.("data-wagtail-vega-extra-datasets", JSON.stringify(extra));
+
         const editor = children.spec?.widget?.codeEditor;
         const messages = this.meta?.wagtailVega?.missingDataset;
         if (editor && children.data && messages) {
-          const extra = this.meta.wagtailVega.extraDatasetNames || [];
           editor.addCheck((spec) =>
             missingDatasets(spec, [...datasetNames(children.data), ...extra], messages),
           );
