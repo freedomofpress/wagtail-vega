@@ -28,8 +28,8 @@ It can also go inside a `StructBlock`, `ListBlock` or nested `StreamBlock`, like
 | --- | --- | --- |
 | `data` | `ListBlock(DatasetBlock())` | Named datasets that the spec can refer to. Can be empty. |
 | `spec` | `SpecBlock` | The Vega or Vega-Lite spec, as JSON. Required. |
-| `description` | `TextBlock` | Optional. Read to people using screen readers. |
-| `caption` | `CharBlock` | Optional. Shown as the figure's `<figcaption>`. |
+| `description` | `TextBlock` | Optional. Read to people using screen readers; not shown. |
+| `caption` | `CharBlock` | Optional. Shown under the chart, as the figure's `<figcaption>`. |
 | `theme` | `ChoiceBlock` | Optional. One of the themes in `WAGTAIL_VEGA["THEMES"]`. Blank means the site default. |
 
 The theme choices are read from settings when the form is built, so adding or removing a theme doesn't need a migration.
@@ -112,6 +112,8 @@ If the JSON can't be parsed, the editor's text is shown again with the error, so
 Each item in the `data` list is a {py:class}`~wagtail_vega.blocks.DatasetBlock`, with a **name** and a **source**. Editors pick a source with a Paste / Document / URL toggle, and only the inputs for that source are shown. When the page is saved, inputs for the other sources are cleared.
 
 Names must start with a letter or underscore and contain only letters, numbers, hyphens and underscores. They must be unique within a chart. The default name is `source`.
+
+Every dataset the spec loads by name must be one of the chart's datasets, or the block doesn't validate. That covers each `"data": {"name": ...}` in a Vega-Lite spec, at any depth (layers, lookups), except names in the spec's own `datasets`, and each entry of a Vega spec's `data` that has only a `name` (and maybe a `format`). The check is in `ChartBlock.clean()`, against the names in `data`; if a subclass adds datasets in `get_datasets()`, override `clean()` too. Pages saved before this check keep rendering, and the check applies the next time they're saved.
 
 ### Paste
 
