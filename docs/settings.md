@@ -49,7 +49,7 @@ Hosts that specs, URL datasets and server-side rendering may load from. `"*.exam
 
 Default: `False`
 
-Render charts without `eval`, so they work under a Content Security Policy without `'unsafe-eval'`. Loads `vega-interpreter.js` and uses an eval-free CSV parser. A few expression functions are unavailable in this mode. See {ref}`csp-safe`.
+Render charts without `eval`, so they work under a Content Security Policy without `'unsafe-eval'`. Evaluates expressions with the vega-interpreter that vega-embed bundles, and uses an eval-free CSV parser. A few expression functions are unavailable in this mode. See {ref}`csp-safe`.
 
 ## `SSR`
 
