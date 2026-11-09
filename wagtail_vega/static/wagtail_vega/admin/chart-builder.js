@@ -1002,7 +1002,13 @@
       const rows = this.rows.length > limit ? this.rows.slice(0, limit) : this.rows;
       const sampled = rows === this.rows ? [] : [t("sampled", { shown: limit.toLocaleString(), total: this.rows.length.toLocaleString() })];
       let full = previewSpec(spec, rows, theme, dark);
-      if (internal.resolveVars) full = internal.resolveVars(full, host, theme?.fallbacks || {});
+      // The admin doesn't have the site's CSS, so var() comes from the
+      // theme's fallbacks, with its dark ones when previewing dark (#24)
+      const fallbacks = {
+        ...theme?.fallbacks,
+        ...(this.scheme === "dark" ? theme?.dark_fallbacks : null),
+      };
+      if (internal.resolveVars) full = internal.resolveVars(full, host, fallbacks);
       const messages = [];
       const logger = window.vega.logger(window.vega.Warn);
       logger.warn = (...args) => {

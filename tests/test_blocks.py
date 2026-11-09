@@ -669,3 +669,22 @@ def test_subclasses_can_add_dataset_names(vl_bar):
         ChartBlock().clean(chart_value(ChartBlock(), spec, [("source", "csv", "a\n1")]))
     meta = JSContext().pack(block)["_args"][2]
     assert meta["wagtailVega"]["extraDatasetNames"] == ["regions"]
+
+
+def test_dark_fallbacks_reach_the_page_and_api(vega_settings, vl_bar):
+    vega_settings.update(
+        THEMES={
+            "t": {
+                "config": {"font": "A"},
+                "fallbacks": {"--x": "#fff"},
+                "dark_fallbacks": {"--x": "#000"},
+            }
+        },
+        DEFAULT_THEME="t",
+    )
+    block = ChartBlock()
+    value = chart_value(block, vl_bar, [("source", "csv", "a\n1")])
+    payload = block.build_chart(value).payload
+    assert payload["fallbacks"] == {"--x": "#fff"}
+    assert payload["darkFallbacks"] == {"--x": "#000"}
+    assert block.get_api_representation(value)["darkFallbacks"] == {"--x": "#000"}

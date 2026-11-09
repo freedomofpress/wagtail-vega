@@ -43,7 +43,7 @@ from .conf import get_setting
 logger = logging.getLogger(__name__)
 
 BUILTIN_PREFIX = "vega:"
-THEME_KEYS = {"label", "config", "dark", "fallbacks", "vega_theme"}
+THEME_KEYS = {"label", "config", "dark", "fallbacks", "dark_fallbacks", "vega_theme"}
 VAR_RE = re.compile(r"var\(\s*(--[\w-]+)\s*(?:,\s*([^)]*?)\s*)?\)")
 
 
@@ -56,6 +56,8 @@ class Theme:
     merged over ``config`` when the page's colour scheme is dark.
     ``fallbacks`` maps CSS custom property names (``"--brand"``) to values
     used when the page doesn't define them, and for server-side rendering.
+    ``dark_fallbacks`` is merged over ``fallbacks`` when the chart is dark:
+    e.g. in the admin's previews, which can't use the site's CSS.
     """
 
     name: str
@@ -63,6 +65,7 @@ class Theme:
     config: dict[str, Any] = field(default_factory=dict)
     dark: dict[str, Any] | None = None
     fallbacks: dict[str, str] = field(default_factory=dict)
+    dark_fallbacks: dict[str, str] = field(default_factory=dict)
     # Name of a theme bundled with vega-embed (e.g. "dark", "fivethirtyeight")
     vega_theme: str | None = None
 
@@ -109,6 +112,7 @@ def build_theme(name: str, definition: Any) -> Theme:
         config=definition.get("config") or {},
         dark=definition.get("dark"),
         fallbacks=definition.get("fallbacks") or {},
+        dark_fallbacks=definition.get("dark_fallbacks") or {},
         vega_theme=definition.get("vega_theme"),
     )
 
