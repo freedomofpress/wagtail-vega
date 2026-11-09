@@ -1,0 +1,23 @@
+# Version-bump pull requests for the pinned npm packages (vendored Vega
+# libraries, CodeMirror, esbuild), Python dependencies and CI actions. After
+# merging an npm bump, run `npm run build` so the committed vendored files
+# match; CI fails until they do.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      vega:
+        patterns: ["vega", "vega-lite", "vega-embed"]
+      codemirror:
+        patterns: ["@codemirror/*", "@lezer/*"]
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

@@ -92,13 +92,16 @@ Pull requests get a preview build on Read the Docs, configured in `.readthedocs.
 
 ## Updating the vendored libraries
 
-Vega, Vega-Lite, vega-embed and the Vega and Vega-Lite JSON schemas are vendored into the package. To update them, change the versions in `scripts/vendor.py` and run it:
+Vega, Vega-Lite, vega-embed and the Vega and Vega-Lite JSON schemas are vendored into the package from npm. Their versions are pinned exactly in `package.json`, and `package-lock.json` records each tarball's integrity hash, which `npm ci` checks. To update them, change the versions in `package.json`, or merge a Dependabot pull request, then run:
 
 ```console
-$ python scripts/vendor.py
+$ npm install --ignore-scripts
+$ npm run vendor
 ```
 
-It downloads each package from npm, checks it against npm's integrity hash, and writes the files into `wagtail_vega/static/wagtail_vega/vendor/` and `wagtail_vega/schemas/`. The versions are recorded in `vendor/VERSIONS.json`. Run the full test suite afterwards, including the browser tests.
+`scripts/vendor.mjs` copies the files into `wagtail_vega/static/wagtail_vega/vendor/` and `wagtail_vega/schemas/`, and records the versions in `vendor/VERSIONS.json`. Run the full test suite afterwards, including the browser tests. CI runs `npm ci --ignore-scripts && npm run build` and fails if the committed files differ from what the pinned packages produce.
+
+vega-embed bundles vega-interpreter, which CSP-safe mode and the chart builder's preview use, so it isn't vendored separately.
 
 Source-map comments are stripped from every vendored script, because `ManifestStaticFilesStorage` fails on references to maps that aren't vendored. The admin's chart builder previews charts with the same files, so check it in the sandbox too.
 
@@ -106,7 +109,7 @@ Source-map comments are stripped from every vendored script, because `ManifestSt
 
 The admin's code editor uses [CodeMirror 6](https://codemirror.net/), which ships as ES modules split over many packages. They're bundled with [esbuild](https://esbuild.github.io/) into one script, `wagtail_vega/static/wagtail_vega/admin/vendor/codemirror.js`, which is committed, so installing wagtail-vega doesn't need Node.
 
-- The packages and esbuild are pinned to exact versions in `package.json` and `package-lock.json`. `npm ci` checks each one against the lockfile's integrity hash.
+- The packages and esbuild are pinned to exact versions in `package.json` and `package-lock.json`. `npm ci` checks each one against the lockfile's integrity hash. `npm run build` rebuilds both the CodeMirror bundle and the vendored Vega files.
 - `scripts/codemirror/entry.mjs` lists what's bundled. Export only what `code-editor.js` uses, to keep the bundle small.
 - `scripts/build-codemirror.mjs` writes the bundle, `codemirror.LICENSE` with the licence of every bundled package, and `codemirror.VERSIONS.json`.
 - The build is deterministic. CI runs `npm ci && npm run build` and fails if the result differs from what's committed.
