@@ -27,6 +27,7 @@ except ImportError:  # pragma: no cover - depends on optional extra
 
 
 def is_available() -> bool:
+    """Whether vl-convert is installed."""
     return vl_convert is not None
 
 
@@ -44,6 +45,14 @@ def allowed_base_urls(spec: Any) -> list[str]:
 
 
 def render_svg(spec: dict, kind: str, vega_theme: str | None = None) -> str | None:
+    """Render a final spec to SVG, cached in Django's default cache for
+    ``SSR_CACHE_TIMEOUT`` seconds.
+
+    ``kind`` is ``"vega"`` or ``"vega-lite"``. ``vega_theme`` is the name of a
+    theme bundled with vega-embed, and only applies to Vega-Lite. Returns
+    ``None`` if vl-convert isn't installed, the spec uses relative URLs, or
+    rendering fails.
+    """
     if vl_convert is None:
         logger.warning("wagtail-vega SSR is enabled but vl-convert is not installed")
         return None

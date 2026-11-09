@@ -28,6 +28,8 @@ DEFAULTS: dict[str, Any] = {
 
 
 def get_setting(name: str) -> Any:
+    """The value of ``WAGTAIL_VEGA[name]``, or its default. A value in
+    settings replaces the default; dicts are not merged."""
     user = getattr(settings, "WAGTAIL_VEGA", {})
     if name in user:
         return user[name]

@@ -29,6 +29,7 @@ dependencies = ["wagtail>=7.4", "jsonschema>=4.18"]
 [project.optional-dependencies]
 ssr = ["vl-convert-python>=1.7"]
 test = ["pytest>=8", "pytest-django>=4.9", "vl-convert-python>=1.7", "pytest-playwright>=0.7"]
+docs = ["sphinx>=8.1", "furo>=2024.8.6", "myst-parser>=4", "sphinx-copybutton>=0.5"]
 dev = ["wagtail-vega[test]", "ruff", "tox>=4"]
 
 [tool.hatch.version]
