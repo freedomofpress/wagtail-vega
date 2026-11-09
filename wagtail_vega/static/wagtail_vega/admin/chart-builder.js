@@ -320,17 +320,22 @@
     return themes[chosen] || themes[defaultTheme] || null;
   }
 
-  /** Draw `spec` into `host`, replacing what's there once it's drawn.
-   * Returns {messages, error}; `isCurrent()` false means a newer drawing
-   * has started, so this one is dropped. */
-  async function drawChart(host, spec, { rowsByName, theme, dark, config, isCurrent = () => true }) {
+  /** Draw `spec` into `host` in the colour `scheme` ("light" or "dark"),
+   * replacing what's there once it's drawn. Returns {messages, error};
+   * `isCurrent()` false means a newer drawing has started, so this one is
+   * dropped. */
+  async function drawChart(host, spec, { rowsByName, theme, scheme, config, isCurrent = () => true }) {
     await loadLibraries(config);
     if (!isCurrent()) return { messages: [] };
+    const dark = Boolean(theme?.dark) && scheme === "dark";
     host.dataset.colorScheme = dark ? "dark" : "light";
     const internal = window.wagtailVega?._internal || {};
     const { rows, sampled } = sampleRows(rowsByName, config.previewRows || 5000);
     let full = previewSpec(spec, rows, theme, dark);
-    if (internal.resolveVars) full = internal.resolveVars(full, host, theme?.fallbacks || {});
+    // The admin doesn't have the site's CSS, so var() comes from the
+    // theme's fallbacks, with its dark ones when previewing dark (#24)
+    const fallbacks = { ...theme?.fallbacks, ...(scheme === "dark" ? theme?.dark_fallbacks : null) };
+    if (internal.resolveVars) full = internal.resolveVars(full, host, fallbacks);
     const messages = sampled.map((s) => t("sampled", { shown: s.shown.toLocaleString(), total: s.total.toLocaleString() }));
     const logged = [];
     const logger = window.vega.logger(window.vega.Warn);
@@ -1213,7 +1218,8 @@
       if (!this.dialog || !this.current) return;
       const token = ++this.previewToken;
       const theme = themeFor(this.config, this.themeField);
-      this.$("[data-scheme-picker]").hidden = !theme?.dark;
+      // Light and dark only differ with a dark config or dark fallbacks
+      this.$("[data-scheme-picker]").hidden = !theme?.dark && !Object.keys(theme?.dark_fallbacks || {}).length;
       const warnings = this.$("[data-warnings]");
       const show = (messages) => {
         const text = JSON.stringify(messages);
@@ -1226,7 +1232,7 @@
         result = await drawChart(this.$("[data-chart]"), this.current, {
           rowsByName: this.rowsByName,
           theme,
-          dark: Boolean(theme?.dark) && this.scheme === "dark",
+          scheme: this.scheme,
           config: this.config,
           isCurrent: () => token === this.previewToken && Boolean(this.dialog),
         });
@@ -1394,7 +1400,7 @@
         result = await drawChart(chart, spec, {
           rowsByName: rows,
           theme,
-          dark: Boolean(theme?.dark) && adminScheme() === "dark",
+          scheme: adminScheme(),
           config: this.config,
           isCurrent,
         });

@@ -100,6 +100,8 @@ WAGTAIL_VEGA = {
                 "view": {"stroke": "#444"},
             },
             "fallbacks": {"--brand": "#c0392b"},
+            # The admin's previews can't use the site's CSS (site.css)
+            "dark_fallbacks": {"--chart-bg": "#1b1b1b"},
         },
         "538": "vega:fivethirtyeight",
     },

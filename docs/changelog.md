@@ -14,6 +14,7 @@ First release.
 - Translatable chart template text.
 - `get_api_representation()`, so Wagtail's API returns renderable charts.
 - System checks for theme settings and `Meta.theme`.
+- `dark_fallbacks` in themes, for CSS variables in dark mode where the page's CSS isn't available, such as the admin's chart previews.
 - The data host allowlist includes the site's own hostnames, and checks URLs the way browsers parse them.
 - A code editor (CodeMirror 6) for specs, JSON fields and pasted data, which underlines JSON syntax errors, spec schema and data host errors (validated live on the server), errors from a failed save, and ragged rows in pasted data. Available as the `wagtail_vega.widgets.CodeEditor` widget.
 - A keyboard-accessible chart builder: a **Build chart from data** button on the spec field opens a lightbox with the chart's data, native form controls for the chart type, encodings and facets, suggestions from the data's columns, and a live preview in the chart's theme. It writes a Vega-Lite v6 spec that refers to the dataset by name, and opens existing single-view charts, keeping whatever it doesn't edit. `SpecBlock(builder=False)` leaves it out. It replaces the Vega Voyager integration, which was removed before release along with its vendored bundle (2.6 MB) and its `voyager=` option.

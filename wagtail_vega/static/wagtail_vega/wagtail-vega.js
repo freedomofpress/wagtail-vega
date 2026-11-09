@@ -5,6 +5,7 @@
  *   darkConfig  config to use when the colour scheme is dark (or null)
  *   embed       vega-embed options
  *   fallbacks   values for var(--token) strings missing from the page CSS
+ *   darkFallbacks  merged over fallbacks when the chart is dark
  *   allowedHosts / cspSafe  security settings mirrored from the server
  *
  * Colour scheme: the nearest [data-color-scheme="light|dark"] ancestor wins,
@@ -200,8 +201,11 @@
       const p = this.payload;
       if (!p) return;
       let spec = structuredClone(p.spec);
-      if (p.darkConfig && this.colorScheme === "dark") spec.config = p.darkConfig;
-      spec = resolveVars(spec, this, p.fallbacks || {});
+      const dark = this.colorScheme === "dark";
+      if (p.darkConfig && dark) spec.config = p.darkConfig;
+      // The page's CSS wins; these only fill in properties it doesn't define
+      const fallbacks = { ...p.fallbacks, ...(dark ? p.darkFallbacks : null) };
+      spec = resolveVars(spec, this, fallbacks);
 
       const dataErrors = [];
       const embed = { ...p.embed };
