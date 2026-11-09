@@ -28,6 +28,14 @@ def pytest_collection_modifyitems(items):
             item.add_marker(pytest.mark.timeout(E2E_TIMEOUT))
 
 
+@pytest.fixture(autouse=True)
+def _no_autosave(settings):
+    """Wagtail's autosave is off in browser tests, except where a test turns
+    it on (test_chart_builder.py's autosave tests): its requests would
+    overlap the tests' own saves."""
+    settings.WAGTAIL_AUTOSAVE_INTERVAL = 0
+
+
 @pytest.fixture
 def vega_settings(settings):
     """A copy of the test project's WAGTAIL_VEGA that tests can modify."""

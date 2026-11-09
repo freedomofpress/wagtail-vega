@@ -1,6 +1,8 @@
 import os
+import threading
 
 from django.conf import settings
+from django.db import connection
 
 
 class ContentSecurityPolicyMiddleware:
@@ -42,3 +44,27 @@ class SandboxAutoLoginMiddleware:
             if user:
                 login(request, user, backend="django.contrib.auth.backends.ModelBackend")
         return self.get_response(request)
+
+
+# Held while a request is handled, and by tests while they read the database
+# (see tests/e2e/conftest.py)
+DATABASE_LOCK = threading.RLock()
+
+
+class SerialRequestsMiddleware:
+    """Handle one request at a time when the database is in-memory SQLite.
+
+    Browser tests run against Django's threaded live server, and with an
+    in-memory SQLite database every thread shares the test's one connection.
+    Requests that overlap (the chart editor's live checks, Wagtail's
+    autosave, a save) can then corrupt each other's queries. Test project
+    only."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if not connection.is_in_memory_db():
+            return self.get_response(request)
+        with DATABASE_LOCK:
+            return self.get_response(request)

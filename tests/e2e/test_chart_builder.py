@@ -13,6 +13,7 @@ from wagtail.documents import get_document_model
 from wagtail.models import Collection
 
 from tests.testapp.demo import BAR
+from tests.testapp.middleware import DATABASE_LOCK
 from tests.testapp.models import ChartPage
 
 from .editor import fill_editor, select_text, set_externally
@@ -752,8 +753,10 @@ def test_layers_open_in_the_code(editor):
 
 
 @pytest.fixture
-def autosave_editor(admin_page, live_server, chart_page):
-    """The edit page, once Wagtail has started watching it for edits."""
+def autosave_editor(admin_page, live_server, chart_page, settings):
+    """The edit page, with autosave on (Wagtail's default interval), once
+    Wagtail has started watching it for edits."""
+    settings.WAGTAIL_AUTOSAVE_INTERVAL = 500
     admin_page.add_init_script(
         """document.addEventListener("w-unsaved:watch-edits", () => {
             window.__watchingEdits = true;
@@ -781,7 +784,9 @@ def wait_for_saved_spec(page, chart_page, check, timeout=15_000):
     """Wait until the latest revision's first chart spec passes `check`
     (autosave may save a few revisions while the editor types)."""
     for _ in range(timeout // 250):
-        revision = ChartPage.objects.get(pk=chart_page.pk).get_latest_revision_as_object()
+        # Not while the live server is using the shared test database
+        with DATABASE_LOCK:
+            revision = ChartPage.objects.get(pk=chart_page.pk).get_latest_revision_as_object()
         spec = revision.body[0].value["spec"]
         if check(spec):
             return spec
@@ -793,7 +798,8 @@ def test_autosave_saves_edits_made_in_the_editor(autosave_editor, chart_page):
     """Edits in the editor reach the form as they're made, so Wagtail
     autosaves them, with the editor still open."""
     page = autosave_editor
-    before = chart_page.revisions.count()
+    with DATABASE_LOCK:
+        before = chart_page.revisions.count()
     dialog = open_builder(page)
     with page.expect_response(lambda r: is_autosave(r, chart_page), timeout=15_000) as info:
         type_into(page, control(dialog, "chartTitle"), "Autosaved title")
@@ -804,7 +810,8 @@ def test_autosave_saves_edits_made_in_the_editor(autosave_editor, chart_page):
     assert body["revision_id"]
     expect(autosave_indicator(page)).to_have_attribute("data-w-autosave-state-value", "saved")
     wait_for_saved_spec(page, chart_page, lambda spec: spec.get("title") == "Autosaved title")
-    assert ChartPage.objects.get(pk=chart_page.pk).revisions.count() > before
+    with DATABASE_LOCK:
+        assert ChartPage.objects.get(pk=chart_page.pk).revisions.count() > before
     expect(dialog).to_be_visible()
 
 
