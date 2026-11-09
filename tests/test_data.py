@@ -77,3 +77,24 @@ def test_parse_text_json_and_empty():
 )
 def test_coerce_edge_cases(raw, value):
     assert parse_delimited(f'x\n"{raw}"') == [{"x": value}]
+
+
+@pytest.mark.django_db
+def test_document_rows_cache_follows_file_content():
+    """Documents without a stored hash, or whose file changes, must never be
+    served another file's cached rows."""
+    from django.core.files.base import ContentFile
+    from wagtail.documents.models import Document
+
+    from wagtail_vega.data import document_rows
+
+    doc = Document.objects.create(title="d", file=ContentFile(b"a\n1\n", name="d.csv"))
+    Document.objects.filter(pk=doc.pk).update(file_hash="")  # e.g. created in code
+    doc.refresh_from_db()
+    assert document_rows(doc) == [{"a": 1}]
+    assert doc.file_hash  # computed and saved
+
+    doc.file.save("d.csv", ContentFile(b"a\n2\n"), save=False)
+    doc.file_hash = ""
+    doc.save()
+    assert document_rows(doc) == [{"a": 2}]
