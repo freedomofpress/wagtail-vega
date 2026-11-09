@@ -118,8 +118,13 @@ def test_build_chart_and_use_it(editor, chart_page, console_errors):
     expect(dialog.locator("[role=status]")).to_contain_text("Drag fields")
 
     # Double-clicking a field adds it to the encoding shelves
-    frame.get_by_text("quarter", exact=True).first.dblclick()
-    frame.get_by_text("requests", exact=True).first.dblclick()
+    # Add one field at a time, waiting for each to land on a shelf: Voyager
+    # drops a double-click that arrives while it's still handling the last,
+    # and "Use" is enabled as soon as the first field is placed.
+    shelves = frame.locator(".encoding-shelf__field-wrapper")
+    for name in ("quarter", "requests"):
+        frame.locator(".field-list__field-list-item").get_by_text(name, exact=True).dblclick()
+        expect(shelves.get_by_text(name, exact=True)).to_be_visible(timeout=VOYAGER_TIMEOUT)
     expect(use).to_be_enabled(timeout=VOYAGER_TIMEOUT)
     use.click()
 
