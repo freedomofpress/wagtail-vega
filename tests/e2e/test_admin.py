@@ -150,3 +150,38 @@ def test_save_switches_source_and_drops_stale_input(editor, chart_page):
     assert data["source_type"] == "url"
     assert data["url"] == "/static/testapp/weather.csv"
     assert not data["paste"]
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_source_toggle_is_one_segmented_control(editor, scheme):
+    """One outer border with dividers between the options, not a border and
+    rounded corners on every option (#20)."""
+    editor.emulate_media(color_scheme=scheme)
+    toggle = field(editor.locator(DATASET).first, "source_type")
+    shape = toggle.evaluate(
+        """t => {
+            const group = t.querySelector('.w-field__input > div');
+            const css = (e) => getComputedStyle(e);
+            const options = [...group.children];
+            const box = (e) => e.getBoundingClientRect();
+            const checked = t.querySelector('label:has(input:checked)');
+            return {
+                groupBorder: css(group).borderTopWidth,
+                groupRadius: css(group).borderTopLeftRadius,
+                optionBorders: options.map(
+                    (o) => [css(o).borderTopWidth, css(o).borderTopLeftRadius]
+                ),
+                dividers: options.map((o) => css(o).borderInlineStartWidth),
+                labelRadii: [...group.querySelectorAll('label')].map(
+                    (l) => css(l).borderTopLeftRadius
+                ),
+                // The selected option fills its segment edge to edge
+                flush: Math.abs(box(checked).height - (box(group).height - 2)) < 1,
+            };
+        }"""
+    )
+    assert shape["groupBorder"] == "1px" and shape["groupRadius"] != "0px"
+    assert shape["optionBorders"] == [["0px", "0px"]] * 3
+    assert shape["dividers"] == ["0px", "1px", "1px"]
+    assert shape["labelRadii"] == ["0px"] * 3
+    assert shape["flush"]
