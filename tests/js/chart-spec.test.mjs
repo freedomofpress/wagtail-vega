@@ -13,6 +13,13 @@ const { parseRows } = window.wagtailVegaAdmin.dataFormat;
 const FIXTURES = JSON.parse(readFileSync(new URL("./fixtures/chart-specs.json", import.meta.url), "utf8"));
 const columns = S.describeColumns(FIXTURES.rows);
 const VL6 = "https://vega.github.io/schema/vega-lite/v6.json";
+// The builder's English text, as the server sends it (kept up to date by
+// tests/test_chart_builder.py)
+const STRINGS = JSON.parse(readFileSync(new URL("./fixtures/builder-strings.json", import.meta.url), "utf8"));
+const text = ({ key, vars = {} }) => {
+  assert.ok(key in STRINGS, key);
+  return STRINGS[key].replace(/%\((\w+)\)s/g, (m, name) => vars[name]);
+};
 
 /** A state built the way the builder's controls build it. */
 function build(recipe) {
@@ -219,7 +226,7 @@ test("fromSpec: what the builder can't open", () => {
   ];
   for (const [spec, problem] of cases) {
     const result = S.fromSpec(spec);
-    assert.match(result.problem || "", problem, JSON.stringify(spec));
+    assert.match(text(result.problem), problem, JSON.stringify(spec));
     assert.equal(result.state, undefined);
   }
   assert.deepEqual(plain(S.fromSpec(null)), { state: null });
@@ -239,7 +246,7 @@ test("sameSpec ignores key order", () => {
 // -- Suggestions ---------------------------------------------------------------------
 
 test("suggestions from column types", () => {
-  const labels = S.suggest(columns).map((s) => s.label);
+  const labels = S.suggest(columns).map((s) => text(s.message));
   assert.deepEqual(plain(labels), [
     "Line: requests over time (date)",
     "Lines: requests over time, one for each agency",
@@ -257,12 +264,12 @@ test("every suggestion makes a chart with fields", () => {
   for (const suggestion of S.suggest(columns)) {
     const state = S.applySuggestion(S.emptyState(), suggestion, columns);
     const { spec } = S.toSpec(state, "source");
-    assert.ok(Object.keys(spec.encoding).length >= 2, suggestion.label);
+    assert.ok(Object.keys(spec.encoding).length >= 2, suggestion.message.key);
   }
 });
 
 test("suggestions for data with few kinds of column", () => {
-  const only = (rows) => S.suggest(S.describeColumns(rows)).map((s) => s.label);
+  const only = (rows) => S.suggest(S.describeColumns(rows)).map((s) => text(s.message));
   assert.deepEqual(plain(only([{ name: "a" }, { name: "b" }])), ["Bars: number of rows by name"]);
   assert.deepEqual(plain(only([{ n: 1 }, { n: 2 }])), ["Histogram of n"]);
   assert.deepEqual(plain(only([{ d: "2024-01-01" }])), ["Bars: rows per month (d)"]);
@@ -279,7 +286,7 @@ test("initialState is the first suggestion", () => {
 });
 
 test("grouped bar suggestion is grouped", () => {
-  const grouped = S.suggest(columns).find((s) => s.label.startsWith("Grouped"));
+  const grouped = S.suggest(columns).find((s) => s.message.key === "suggest.grouped");
   const { spec } = S.toSpec(S.applySuggestion(S.emptyState(), grouped, columns), "source");
   assert.deepEqual(plain(spec.encoding.xOffset), { field: "agency" });
 });

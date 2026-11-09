@@ -10,6 +10,7 @@ from django.urls import reverse
 from wagtail.admin.telepath import register
 from wagtail.admin.telepath.widgets import WidgetAdapter
 
+from .builder_strings import builder_strings
 from .conf import get_setting
 from .encoders import VegaJSONEncoder
 from .themes import get_themes
@@ -34,6 +35,8 @@ BUILDER_PREVIEW_JS = [
     "wagtail_vega/wagtail-vega.js",
 ]
 BUILDER_PREVIEW_CSS = "wagtail_vega/wagtail-vega.css"
+# The preview draws at most this many rows; the spec always loads them all
+BUILDER_PREVIEW_ROWS = 5000
 
 
 class CodeEditor(forms.Textarea):
@@ -82,6 +85,9 @@ class CodeEditor(forms.Textarea):
         context["widget"]["attrs"]["data-wagtail-vega-code-editor"] = json.dumps(self.get_config())
         if self.builder:
             context["builder"] = json.dumps(self.builder_config(), cls=VegaJSONEncoder)
+            # With no spec yet, the builder is the obvious place to start
+            text = value if isinstance(value, str) else ""
+            context["builder_first"] = text.strip() in ("", "null")
         return context
 
     def builder_config(self) -> dict:
@@ -106,6 +112,8 @@ class CodeEditor(forms.Textarea):
             "embedOptions": get_setting("EMBED_OPTIONS"),
             "scripts": [static(path) for path in BUILDER_PREVIEW_JS],
             "stylesheet": static(BUILDER_PREVIEW_CSS),
+            "previewRows": BUILDER_PREVIEW_ROWS,
+            "strings": builder_strings(),
         }
 
     @property

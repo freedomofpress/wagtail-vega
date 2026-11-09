@@ -1,12 +1,14 @@
-{% load wagtailadmin_tags %}{% comment %}
+{% load i18n wagtailadmin_tags %}{% comment %}
 The textarea comes first: Wagtail puts the field's attributes (aria-describedby,
 required) on a widget's first element, and the code editor copies them. The
 button then moves itself above the textarea, and the code editor inserts
-itself right after it.
+itself right after it. While the spec is empty, the button is the primary
+action and a hint says what it does (chart-builder.js keeps this up to date).
 {% endcomment %}{% include "django/forms/widgets/textarea.html" %}{% if builder %}
-<wagtail-vega-chart-builder class="wagtail-vega-spec__toolbar" data-for="{{ widget.name }}" data-config="{{ builder }}">
-    <button type="button" class="button button-small button-secondary bicolor button--icon" data-builder-open>
-        <span class="icon-wrapper">{% icon name="wagtail-vega-chart" %}</span>Build chart
+<wagtail-vega-chart-builder class="wagtail-vega-spec__toolbar{% if builder_first %} is-empty{% endif %}" data-for="{{ widget.name }}" data-config="{{ builder }}">
+    <button type="button" class="button button-small {% if not builder_first %}button-secondary {% endif %}bicolor button--icon" data-builder-open>
+        <span class="icon-wrapper">{% icon name="wagtail-vega-chart" %}</span>{% translate "Build chart from data" %}
     </button>
+    <p class="wagtail-vega-spec__hint" data-builder-hint{% if not builder_first %} hidden{% endif %}>{% translate "Pick a chart type and the columns to show, without writing JSON. Or write a Vega or Vega-Lite spec below." %}</p>
     <p class="wagtail-vega-spec__note" data-builder-note hidden></p>
 </wagtail-vega-chart-builder>{% endif %}

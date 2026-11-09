@@ -15,7 +15,7 @@ Editors add a **Chart** block from the StreamField's block menu. Its fields are 
 For common charts, the quickest way is:
 
 1. Copy the data from a spreadsheet and paste it into the dataset.
-2. Choose **Build chart** above the spec, and make the chart with the [chart builder](#chart-builder).
+2. Choose **Build chart from data** above the spec, and make the chart with the [chart builder](#chart-builder).
 3. Preview the page.
 
 For anything the builder doesn't make, a typical workflow is:
@@ -97,7 +97,11 @@ Screen readers announce the field's label and help text, and the first problem u
 
 ## Chart builder
 
-Above the spec's code editor is a **Build chart** button. It opens the chart builder in a lightbox, with the chart's data. Editors pick a chart type and the fields to show with ordinary form controls, see a preview as they go, and choose **Use this chart** to put the chart's spec in the field. No JSON is needed, and everything works with the keyboard.
+Above the spec's code editor is a **Build chart from data** button. It opens the chart builder in a lightbox, with the chart's data. Editors pick a chart type and the fields to show with ordinary form controls, see a preview as they go, and choose **Use this chart** to put the chart's spec in the field. No JSON is needed, and everything works with the keyboard.
+
+While the spec is empty, as in a new chart, the button is the field's main action, with a hint next to it. Once there's a spec, it becomes a secondary button.
+
+The builder's text is translated with the rest of wagtail-vega: it comes from the server (`wagtail_vega/builder_strings.py`), in the admin user's language.
 
 Data
 : The builder gets the data from the form as it is now, whether or not the page has been saved. Pasted data is read exactly as it will be for the chart, documents are read on the server, and URL datasets are fetched by the browser, from allowed hosts only. If the chart has several datasets, a **Dataset** menu picks one. Datasets with no data yet are left out.
@@ -115,13 +119,13 @@ Title and size
 : The chart's title, and its width: the width of the page (the default), automatic or fixed. Charts split into rows or columns can't fill the page width, so choosing a row or column field sets the width to automatic. The height can be set in pixels.
 
 Preview
-: The preview is drawn with the same libraries as the site, in the chart's theme (the one chosen in the **Theme** field, or the site default). If the theme has dark mode settings, a **Colours** menu shows the chart in light or dark mode. Your site's stylesheet isn't loaded in the admin, so CSS custom properties in the theme (`var(--brand)`) use the theme's `fallbacks`. The spec is shown under the preview as it's built.
+: The preview is drawn with the same libraries as the site, in the chart's theme (the one chosen in the **Theme** field, or the site default). If the theme has dark mode settings, a **Colours** menu shows the chart in light or dark mode; it starts in the admin's own colour scheme. Your site's stylesheet isn't loaded in the admin, so CSS custom properties in the theme (`var(--brand)`) use the theme's `fallbacks`. The spec is shown under the preview as it's built. Datasets with more than 5,000 rows are previewed from their first 5,000 rows, and the builder says so; the spec always loads the whole dataset.
 
 Using the chart
 : **Use this chart** writes a Vega-Lite v6 spec that loads the dataset by name (`"data": {"name": "source"}`, never a copy of the data), after checking it with the same checks as saving. If the field already has a spec, the lightbox asks before replacing it. The change goes into the code editor as one edit, so Ctrl+Z (Cmd+Z) undoes it. Dates without times, such as `2024-01-31`, are grouped with UTC time units (`utcyearmonth`), so that they fall in the right month in every time zone.
 
 Cancelling
-: **Cancel**, the close button and Esc close the lightbox without changing the field. Focus goes back to the **Build chart** button.
+: **Cancel**, the close button and Esc close the lightbox without changing the field. Focus goes back to the **Build chart from data** button.
 
 ### Opening an existing chart
 
@@ -138,7 +142,7 @@ The builder is a modal dialog: focus moves into it when it opens, Tab and Shift+
 The button is disabled, with a note, on charts whose data comes from code ({py:class}`~wagtail_vega.blocks.BaseChartBlock` subclasses without a `data` field), because there's no data in the form to build from. Developers can leave the button out with `SpecBlock(builder=False)`.
 
 :::{admonition} Limitations
-The builder makes one view at a time: a single mark with its encodings and facets. Layers, concatenated views, selections and transforms are written in the spec by hand (and kept when the chart is opened again). A theme set in a block's `Meta.theme` isn't shown in the preview, which uses the **Theme** field or the site default. The whole dataset is loaded for the preview, so very large datasets can make it slow.
+The builder makes one view at a time: a single mark with its encodings and facets. Layers, concatenated views, selections and transforms are written in the spec by hand (and kept when the chart is opened again). A theme set in a block's `Meta.theme` isn't shown in the preview, which uses the **Theme** field or the site default. The whole dataset is still downloaded to read its columns.
 :::
 
 For what the builder needs from the admin, see {ref}`builder-security`.

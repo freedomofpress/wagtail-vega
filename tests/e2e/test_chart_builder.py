@@ -435,7 +435,7 @@ def test_build_with_the_keyboard_and_save(name, editor, chart_page, live_server,
 def test_opens_the_fields_chart(editor, console_errors):
     dialog = open_builder(editor)
     expect(dialog).to_have_attribute("aria-labelledby", re.compile("-title$"))
-    expect(dialog.get_by_role("heading", name="Build a chart")).to_be_visible()
+    expect(dialog.get_by_role("heading", name="Build a chart from data")).to_be_visible()
     expect(dialog.locator("[role=status]")).to_contain_text("Opened the field's chart.")
     # Focus moves to the first control
     expect(control(dialog, "mark")).to_be_focused()
@@ -818,3 +818,44 @@ def test_preview_needs_no_unsafe_eval(admin_page, live_server, chart_page, conso
     expect(dialog.locator("[data-chart] svg .mark-line").first).to_be_visible()
     assert [e for e in console_errors if "eval" in e] == []
     expect(dialog.locator("[data-warnings]")).to_be_empty()
+
+
+def test_large_datasets_are_previewed_from_a_sample(editor):
+    """The preview draws the first rows only; the spec loads them all."""
+    editor.locator(LAUNCHER).nth(WEATHER).evaluate(
+        "(el) => { el.dataset.config = JSON.stringify({...JSON.parse(el.dataset.config),"
+        " previewRows: 10}); }"
+    )
+    dialog = open_builder(editor, WEATHER)
+    wait_for_preview(dialog)
+    expect(dialog.locator("[data-warnings]")).to_contain_text(
+        "The preview shows the first 10 of 48 rows. The chart on the page uses them all."
+    )
+    spec = json.loads(dialog.locator("[data-json]").text_content())
+    assert spec["data"] == {"name": "weather"}
+    assert "datasets" not in spec
+
+
+def test_empty_spec_makes_the_builder_the_main_action(editor):
+    launcher = editor.locator(LAUNCHER).first
+    button = launcher.locator("button")
+    hint = launcher.locator("[data-builder-hint]")
+    # A spec: the builder is a secondary action
+    expect(button).to_have_class(re.compile("button-secondary"))
+    expect(hint).to_be_hidden()
+    # No spec: it's the main one, with a hint that says what it does
+    fill_editor(spec_field(editor), "")
+    expect(button).not_to_have_class(re.compile("button-secondary"))
+    expect(hint).to_be_visible()
+    expect(hint).to_contain_text("without writing JSON")
+    assert hint.get_attribute("id") in button.get_attribute("aria-describedby")
+    fill_editor(spec_field(editor), "{}")
+    expect(button).to_have_class(re.compile("button-secondary"))
+    # New blocks start empty
+    editor.locator("button.c-sf-add-button").last.click()
+    editor.get_by_role("option", name=re.compile(r"^Chart$")).click()
+    new = editor.locator(LAUNCHER).last
+    expect(new.locator("button")).not_to_have_class(re.compile("button-secondary"))
+    expect(new.locator("[data-builder-hint]")).to_be_visible()
+    # No Voyager anywhere
+    expect(editor.locator("body")).not_to_contain_text("Voyager")

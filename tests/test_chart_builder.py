@@ -7,7 +7,10 @@ The spec validation endpoint it also uses is tested in test_editor.py.
 
 import html
 import json
+import os
+import re
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth.models import Group, Permission
@@ -16,6 +19,7 @@ from django.urls import NoReverseMatch, reverse
 from wagtail.documents import get_document_model
 
 from wagtail_vega.blocks import SpecBlock
+from wagtail_vega.builder_strings import builder_strings
 from wagtail_vega.validation import spec_problems
 from wagtail_vega.widgets import CodeEditor
 
@@ -172,7 +176,7 @@ def test_spec_widget_has_builder_button(vega_settings):
     markup = render_spec_field(SpecBlock())
     assert "<wagtail-vega-chart-builder" in markup
     assert 'data-for="spec"' in markup
-    assert "Build chart" in markup
+    assert "Build chart from data" in markup
     config = builder_config(markup)
     assert config["rowsUrl"] == ROWS
     assert config["validateUrl"] == VALIDATE
@@ -229,6 +233,84 @@ def test_spec_widget_without_builder():
     assert "wagtail-vega-chart-builder" not in markup
     assert "data-wagtail-vega-code-editor=" in markup
     assert "chart-builder" not in str(widget.media)
+
+
+@pytest.mark.parametrize(
+    ("value", "first"), [("", True), ("null", True), ("  ", True), ('{"a": 1}', False)]
+)
+def test_builder_is_the_main_action_for_an_empty_spec(value, first):
+    markup = SpecBlock().field.widget.render("spec", value, {"id": "spec"})
+    button = markup[markup.index("<button") : markup.index(">", markup.index("<button"))]
+    assert ("button-secondary" not in button) is first
+    assert ("is-empty" in markup) is first
+    hint = markup[
+        markup.index("data-builder-hint") : markup.index("</p>", markup.index("data-builder-hint"))
+    ]
+    assert ("hidden" in hint) is not first
+    assert "without writing JSON" in hint
+
+
+ADMIN_STATIC = Path(__file__).parent.parent / "wagtail_vega" / "static" / "wagtail_vega" / "admin"
+
+
+def js_keys():
+    """Every string key chart-builder.js and chart-spec.js look up."""
+    builder = (ADMIN_STATIC / "chart-builder.js").read_text()
+    spec = (ADMIN_STATIC / "chart-spec.js").read_text()
+    keys = set(re.findall(r'\bt\("([\w.]+)"', builder))
+    keys |= set(re.findall(r'key: "([\w.]+)"', spec))
+    keys |= {f"suggest.{k}" for k in re.findall(r'\badd\("(\w+)"', spec)}
+
+    def values(name):
+        match = re.search(rf"const {name} = \[(.*?)\];", spec, re.S)
+        return re.findall(r'"(\w*)"', match.group(1))
+
+    for prefix, name in [
+        ("mark", "MARKS"),
+        ("type", "TYPES"),
+        ("aggregate", "AGGREGATES"),
+        ("timeUnit", "TIME_UNITS"),
+        ("channel", "CHANNELS"),
+        ("channelTitle", "CHANNELS"),
+        ("columnType", "TYPES"),
+    ]:
+        keys |= {f"{prefix}.{v}" for v in values(name)}
+    keys |= {f"channelShort.{v}" for v in values("SORT_CHANNELS")}
+    arrangements = re.search(r"const ARRANGEMENTS = \[(.*?)\n  \];", spec, re.S).group(1)
+    keys |= {f"arrangement.{v or 'stacked'}" for v in re.findall(r'\["(\w*)", \[', arrangements)}
+    keys |= {"arrangementHint.bar", "arrangementHint.area"}
+    return keys
+
+
+def test_every_builder_string_is_translatable():
+    """The builder's scripts have no English of their own: every key they
+    use comes from builder_strings(), which uses gettext."""
+    strings = builder_strings()
+    missing = js_keys() - set(strings)
+    assert not missing
+    assert len(js_keys()) > 150
+    config = builder_config(render_spec_field(SpecBlock()))
+    assert config["strings"] == strings
+
+
+def test_builder_strings_are_translated(settings):
+    from django.utils import translation
+
+    with translation.override("de"):
+        strings = builder_strings()
+    # No German catalogue ships yet, but the strings go through gettext
+    assert strings["use"] == "Use this chart"
+    with patch("wagtail_vega.builder_strings._", lambda s: f"[{s}]"):
+        assert builder_strings()["use"] == "[Use this chart]"
+
+
+def test_js_strings_fixture_is_current():
+    """tests/js/ checks messages against the English strings in this fixture.
+    Run with UPDATE_FIXTURES=1 to rewrite it after changing builder_strings.py."""
+    fixture = Path(__file__).parent / "js" / "fixtures" / "builder-strings.json"
+    if os.environ.get("UPDATE_FIXTURES"):
+        fixture.write_text(json.dumps(builder_strings(), indent=2, ensure_ascii=False) + "\n")
+    assert json.loads(fixture.read_text()) == builder_strings()
 
 
 def test_builder_needs_spec_mode():

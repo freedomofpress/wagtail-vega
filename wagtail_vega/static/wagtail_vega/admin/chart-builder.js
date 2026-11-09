@@ -33,6 +33,21 @@
   const CUSTOM = "__custom__";
   const PREVIEW_DELAY = 200; // ms
 
+  // The builder's text, translated on the server (builder_strings.py) and
+  // passed in the button's settings. Values use %(name)s placeholders.
+  let STRINGS = {};
+
+  function t(key, vars = {}) {
+    const template = Object.hasOwn(STRINGS, key) ? STRINGS[key] : key;
+    return template.replace(/%\((\w+)\)s/g, (match, name) => (name in vars ? String(vars[name]) : match));
+  }
+
+  /** A message from chart-spec.js ({key, vars}), translated. */
+  const message = ({ key, vars }) => t(key, vars);
+
+  const escapeHTML = (text) =>
+    String(text).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
   const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
   const clone = (v) => JSON.parse(JSON.stringify(v));
 
@@ -126,21 +141,21 @@
 
   async function loadRows(dataset, config) {
     const parseRows = admin.dataFormat?.parseRows;
-    if (!parseRows) throw new Error("The data editor's scripts aren't loaded.");
+    if (!parseRows) throw new Error(t("error.scripts"));
     if (dataset.source === "document") {
       const url = `${config.rowsUrl}?id=${encodeURIComponent(dataset.document)}`;
       const response = await fetch(url, { headers: { Accept: "application/json" } });
       const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || `Couldn't load the document (${response.status}).`);
+      if (!response.ok) throw new Error(body.error || t("error.document", { status: response.status }));
       return body.rows;
     }
     if (dataset.source === "url") {
       if (!urlAllowed(dataset.url, config.allowedHosts, document.baseURI)) {
-        throw new Error(`Data can't be loaded from ${dataset.url}.`);
+        throw new Error(t("error.host", { url: dataset.url }));
       }
       const url = new URL(dataset.url, document.baseURI);
       const response = await fetch(url);
-      if (!response.ok) throw new Error(`Couldn't load ${url.href} (${response.status}).`);
+      if (!response.ok) throw new Error(t("error.url", { url: url.href, status: response.status }));
       return parseRows(await response.text(), dataset.format || formatFromUrl(url));
     }
     return parseRows(dataset.paste);
@@ -175,7 +190,7 @@
       },
       body: JSON.stringify(spec),
     });
-    if (!response.ok) throw new Error(`Couldn't check the spec (${response.status}).`);
+    if (!response.ok) throw new Error(t("error.check", { status: response.status }));
     const { errors } = await response.json();
     return Array.isArray(errors) ? problemMessages(errors) : [];
   }
@@ -205,7 +220,7 @@
               script.src = src;
               script.async = false; // run in order
               script.addEventListener("load", resolve);
-              script.addEventListener("error", () => reject(new Error(`Couldn't load ${src}.`)));
+              script.addEventListener("error", () => reject(new Error(t("error.library", { src }))));
               document.head.append(script);
             }),
         ),
@@ -273,14 +288,13 @@
     );
   }
 
-  const TYPE_NAMES = { quantitative: "number", nominal: "category", ordinal: "ordered", temporal: "date" };
 
   /** A value kept from the spec, briefly, e.g. for a placeholder. */
   function keptText(value) {
-    if (value === null) return "None (kept from the spec)";
+    if (value === null) return t("keptNone");
     let text = JSON.stringify(value);
     if (text.length > 40) text = `${text.slice(0, 39)}…`;
-    return `${text} (kept from the spec)`;
+    return t("kept", { value: text });
   }
 
   /** One opening of the lightbox for one spec field. */
@@ -304,7 +318,7 @@
           this.previous = JSON.parse(this.text);
           this.opened = this.spec.fromSpec(this.previous);
         } catch {
-          this.opened = { problem: "it isn't valid JSON" };
+          this.opened = { problem: { key: "problem.json" } };
         }
       }
       const wanted = this.opened.dataset;
@@ -327,37 +341,37 @@
       });
       dialog.innerHTML = `
         <header class="wagtail-vega-builder__header">
-          <h2 class="wagtail-vega-builder__title" id="${id}-title">Build a chart</h2>
+          <h2 class="wagtail-vega-builder__title" id="${id}-title">${escapeHTML(t("title"))}</h2>
           <div class="wagtail-vega-builder__dataset" data-dataset-picker hidden>
-            <label for="${id}-dataset">Dataset</label>
+            <label for="${id}-dataset">${escapeHTML(t("dataset"))}</label>
             <select id="${id}-dataset" data-dataset></select>
           </div>
-          <button type="button" class="wagtail-vega-builder__close" data-cancel aria-label="Close without using the chart">${icon("cross")}</button>
+          <button type="button" class="wagtail-vega-builder__close" data-cancel aria-label="${escapeHTML(t("close"))}">${icon("cross")}</button>
         </header>
         <div class="wagtail-vega-builder__body">
           <div class="wagtail-vega-builder__problem" data-problem hidden>
             <p id="${id}-problem" data-problem-text></p>
-            <p>You can start a new chart from the data instead. The spec in the field is only replaced if you choose “Use this chart” and confirm.</p>
+            <p>${escapeHTML(t("problemHelp"))}</p>
             <div class="wagtail-vega-builder__actions">
-              <button type="button" class="button" data-start-fresh aria-describedby="${id}-problem">Start a new chart</button>
+              <button type="button" class="button" data-start-fresh aria-describedby="${id}-problem">${escapeHTML(t("startFresh"))}</button>
             </div>
           </div>
           <div class="wagtail-vega-builder__controls" data-controls hidden></div>
           <section class="wagtail-vega-builder__preview" data-preview aria-labelledby="${id}-preview-title" hidden>
             <div class="wagtail-vega-builder__preview-header">
-              <h3 id="${id}-preview-title">Preview</h3>
+              <h3 id="${id}-preview-title">${escapeHTML(t("preview"))}</h3>
               <div class="wagtail-vega-builder__scheme" data-scheme-picker hidden>
-                <label for="${id}-scheme">Colours</label>
+                <label for="${id}-scheme">${escapeHTML(t("colours"))}</label>
                 <select id="${id}-scheme" data-scheme>
-                  <option value="light">Light mode</option>
-                  <option value="dark">Dark mode</option>
+                  <option value="light">${escapeHTML(t("light"))}</option>
+                  <option value="dark">${escapeHTML(t("dark"))}</option>
                 </select>
               </div>
             </div>
             <div class="wagtail-vega-builder__chart" data-color-scheme="light" data-chart></div>
             <ul class="wagtail-vega-builder__warnings" data-warnings aria-live="polite"></ul>
             <details class="wagtail-vega-builder__json">
-              <summary>Spec (JSON)</summary>
+              <summary>${escapeHTML(t("json"))}</summary>
               <pre data-json></pre>
             </details>
           </section>
@@ -368,13 +382,13 @@
             <ul class="wagtail-vega-builder__errors" role="alert" data-errors></ul>
           </div>
           <div class="wagtail-vega-builder__actions" data-actions>
-            <button type="button" class="button button-secondary" data-cancel>Cancel</button>
-            <button type="button" class="button" data-use disabled>Use this chart</button>
+            <button type="button" class="button button-secondary" data-cancel>${escapeHTML(t("cancel"))}</button>
+            <button type="button" class="button" data-use disabled>${escapeHTML(t("use"))}</button>
           </div>
           <div class="wagtail-vega-builder__actions wagtail-vega-builder__confirm" data-confirm hidden>
-            <p id="${id}-confirm">This replaces the spec that's in the field now.</p>
-            <button type="button" class="button button-secondary" data-confirm-back>Keep editing</button>
-            <button type="button" class="button" data-confirm-replace aria-describedby="${id}-confirm">Replace spec</button>
+            <p id="${id}-confirm">${escapeHTML(t("confirm"))}</p>
+            <button type="button" class="button button-secondary" data-confirm-back>${escapeHTML(t("keepEditing"))}</button>
+            <button type="button" class="button" data-confirm-replace aria-describedby="${id}-confirm">${escapeHTML(t("replace"))}</button>
           </div>
         </footer>`;
       document.body.append(dialog);
@@ -417,42 +431,42 @@
       const suggestions = h(
         "details",
         { className: "wagtail-vega-builder__section wagtail-vega-builder__suggestions", "data-suggestions": true },
-        h("summary", { text: "Suggested charts" }),
-        h("p", { className: "wagtail-vega-builder__hint", text: "Start from a chart that suits the data's columns. It replaces the chart type and fields below." }),
+        h("summary", { text: t("suggestions") }),
+        h("p", { className: "wagtail-vega-builder__hint", text: t("suggestionsHelp") }),
         h("ul", { "data-suggestion-list": true }),
       );
 
       const chart = h(
         "fieldset",
         { className: "wagtail-vega-builder__section" },
-        h("legend", { text: "Chart" }),
+        h("legend", { text: t("chart") }),
         h(
           "div",
           { className: "wagtail-vega-builder__grid" },
-          this.control("mark", "Chart type", select("mark", S.MARKS)),
-          this.control("arrangement", "Bars or areas that share a position", select("arrangement")),
+          this.control("mark", t("chartType"), select("mark", S.MARKS.map((m) => [m, t(`mark.${m}`)]))),
+          this.control("arrangement", t("arrangement"), select("arrangement")),
         ),
         h("p", { className: "wagtail-vega-builder__hint", "data-arrangement-hint": true, hidden: true }),
-        this.checkbox("point", "Show a point for each value", "point"),
-        this.checkbox("donut", "Donut (leave a hole in the middle)", "donut"),
-        this.checkbox("tooltip", "Show values in a tooltip on hover or focus", "tooltip"),
+        this.checkbox("point", t("point"), "point"),
+        this.checkbox("donut", t("donut"), "donut"),
+        this.checkbox("tooltip", t("tooltip"), "tooltip"),
       );
 
-      const channels = Object.entries(S.CHANNELS).map(([name, info]) => {
+      const channels = S.CHANNELS.map((name) => {
         const fieldset = h(
           "fieldset",
           { className: "wagtail-vega-builder__section wagtail-vega-builder__channel", "data-channel": name },
-          h("legend", { text: info.label }),
+          h("legend", { text: t(`channel.${name}`) }),
           h(
             "div",
             { className: "wagtail-vega-builder__grid" },
-            this.control(`${name}-field`, "Field", select("field")),
-            this.control(`${name}-type`, "Type", select("type")),
-            this.control(`${name}-aggregate`, "Combine rows", select("aggregate")),
-            this.control(`${name}-bin`, "Bins", select("bin")),
-            this.control(`${name}-timeUnit`, "Time unit", select("timeUnit")),
-            this.control(`${name}-sort`, "Sort", select("sort")),
-            this.control(`${name}-title`, info.titleLabel, h("input", { type: "text", "data-prop": "title" })),
+            this.control(`${name}-field`, t("field"), select("field")),
+            this.control(`${name}-type`, t("type"), select("type")),
+            this.control(`${name}-aggregate`, t("aggregate"), select("aggregate")),
+            this.control(`${name}-bin`, t("bin"), select("bin")),
+            this.control(`${name}-timeUnit`, t("timeUnit"), select("timeUnit")),
+            this.control(`${name}-sort`, t("sort"), select("sort")),
+            this.control(`${name}-title`, t(`channelTitle.${name}`), h("input", { type: "text", "data-prop": "title" })),
           ),
         );
         if (name === "y") {
@@ -460,7 +474,7 @@
             h(
               "div",
               { className: "wagtail-vega-builder__swap", "data-control": "swap" },
-              h("button", { type: "button", className: "button button-small button-secondary", "data-swap": true, text: "Swap X and Y" }),
+              h("button", { type: "button", className: "button button-small button-secondary", "data-swap": true, text: t("swap") }),
             ),
             fieldset,
           ];
@@ -473,21 +487,21 @@
       const layout = h(
         "fieldset",
         { className: "wagtail-vega-builder__section" },
-        h("legend", { text: "Title and size" }),
-        this.control("chart-title", "Chart title", h("input", { type: "text", "data-prop": "chartTitle" })),
+        h("legend", { text: t("layout") }),
+        this.control("chart-title", t("chartTitle"), h("input", { type: "text", "data-prop": "chartTitle" })),
         h(
           "div",
           { className: "wagtail-vega-builder__grid" },
-          this.control("width", "Width", select("width")),
-          this.control("width-value", "Width in pixels", width),
-          this.control("height", "Height in pixels", height, "Leave blank for the default."),
+          this.control("width", t("width"), select("width")),
+          this.control("width-value", t("widthValue"), width),
+          this.control("height", t("height"), height, t("heightHint")),
         ),
       );
 
       const kept = h(
         "section",
         { className: "wagtail-vega-builder__section wagtail-vega-builder__kept", "data-kept-section": true, "aria-labelledby": `${this.id}-kept-title`, hidden: true },
-        h("h3", { id: `${this.id}-kept-title`, text: "From the current spec" }),
+        h("h3", { id: `${this.id}-kept-title`, text: t("keptTitle") }),
         h("div", { "data-kept": true }),
         h("div", { "data-dropped": true }),
       );
@@ -544,12 +558,12 @@
     async load(first) {
       const dataset = this.datasets.find((d) => d.name === this.datasetName);
       this.setErrors([]);
-      this.setStatus(`Loading “${dataset.name}”…`);
+      this.setStatus(t("loading", { name: dataset.name }));
       this.$("[data-use]").disabled = true;
       let rows;
       try {
         rows = await loadRows(dataset, this.config);
-        if (!Array.isArray(rows)) throw new Error(`Couldn't read “${dataset.name}”.`);
+        if (!Array.isArray(rows)) throw new Error(t("unreadable", { name: dataset.name }));
       } catch (e) {
         if (!this.dialog) return;
         this.setStatus("");
@@ -559,7 +573,7 @@
       if (!this.dialog || dataset.name !== this.datasetName) return; // closed or switched meanwhile
       if (!rows.length) {
         this.setStatus("");
-        this.setErrors([`“${dataset.name}” has no rows yet.`]);
+        this.setErrors([t("noRows", { name: dataset.name })]);
         return;
       }
       this.rows = rows;
@@ -572,10 +586,10 @@
     start() {
       const { problem, state } = this.opened;
       if (problem) {
-        this.$("[data-problem-text]").textContent = `The builder can't open the spec that's in the field: ${problem}.`;
+        this.$("[data-problem-text]").textContent = t("problem", { problem: message(problem) });
         this.$("[data-problem]").hidden = false;
         this.setStatus("");
-        this.setNotice("The builder can't open this spec.");
+        this.setNotice(t("cantOpen"));
         this.$("[data-start-fresh]").focus();
         return;
       }
@@ -584,14 +598,14 @@
         this.original = this.spec.toSpec(state, this.datasetName);
         this.setNotice(
           this.missingDataset
-            ? `Opened the field's chart. It used the dataset “${this.missingDataset}”, which this chart doesn't have, so it now uses “${this.datasetName}”.`
-            : "Opened the field's chart.",
+            ? t("openedMissing", { missing: this.missingDataset, name: this.datasetName })
+            : t("opened"),
         );
       } else {
         this.state = this.spec.initialState(this.columns);
         this.original = null;
         this.$("[data-suggestions]").open = true;
-        this.setNotice("Started from a suggested chart. Change anything below.");
+        this.setNotice(t("started"));
       }
       this.showBuilder();
     }
@@ -601,7 +615,7 @@
       this.original = null;
       this.$("[data-problem]").hidden = true;
       this.$("[data-suggestions]").open = true;
-      this.setNotice("Started a new chart from a suggestion.");
+      this.setNotice(t("startedFresh"));
       this.showBuilder();
     }
 
@@ -639,9 +653,9 @@
         this.state.mark = fresh.mark;
         this.state.arrangement = fresh.arrangement;
         this.state.channels = fresh.channels;
-        this.setNotice(`“${this.datasetName}” doesn't have the fields the chart used, so it starts from a suggestion.`);
+        this.setNotice(t("datasetFields", { name: this.datasetName }));
       } else {
-        this.setNotice(`The chart now uses “${this.datasetName}”.`);
+        this.setNotice(t("datasetNow", { name: this.datasetName }));
       }
       this.update();
     }
@@ -678,7 +692,7 @@
           S.setField(ch, el.value, this.columns);
           if ((name === "row" || name === "column") && el.value && state.width === "container") {
             state.width = "";
-            this.announce("Width set to automatic: charts split into rows or columns can't fill the page width.");
+            this.announce(t("widthAuto"));
           }
         } else if (prop === "type") {
           ch.type = el.value;
@@ -698,7 +712,7 @@
         }
       } else if (prop === "mark") {
         state.mark = el.value;
-        const allowed = S.ARRANGEMENTS.find(([a]) => a === state.arrangement)[2];
+        const allowed = S.ARRANGEMENTS.find(([a]) => a === state.arrangement)[1];
         if (!allowed.includes(state.mark)) state.arrangement = "";
       } else if (prop === "arrangement") {
         const measure = state.channels[S.measureChannel(state)];
@@ -727,7 +741,7 @@
       const { channels } = this.state;
       [channels.x, channels.y] = [channels.y, channels.x];
       this.update();
-      this.announce("Swapped the X and Y axes.");
+      this.announce(t("swapped"));
     }
 
     useSuggestion(index) {
@@ -735,7 +749,7 @@
       if (!suggestion) return;
       this.spec.applySuggestion(this.state, suggestion, this.columns);
       this.update();
-      this.announce(`Chart set to “${suggestion.label}”.`);
+      this.announce(t("suggestionApplied", { label: message(suggestion.message) }));
     }
 
     announce(text) {
@@ -757,13 +771,13 @@
 
     fieldOptions() {
       const S = this.spec;
-      const options = [["", "None"], [S.COUNT, "Count of rows"]];
+      const options = [["", t("none")], [S.COUNT, t("count")]];
       for (const column of this.columns) {
-        options.push([column.name, `${column.name} (${TYPE_NAMES[column.type]})`]);
+        options.push([column.name, t("column", { name: column.name, type: t(`columnType.${column.type}`) })]);
       }
       const names = new Set(this.columns.map((c) => c.name));
       for (const field of S.specFields(this.state)) {
-        if (!names.has(field)) options.push([field, `${field} (from the spec)`]);
+        if (!names.has(field)) options.push([field, t("specField", { name: field })]);
       }
       return options;
     }
@@ -780,17 +794,17 @@
         else if (el.value !== String(value)) el.value = String(value);
       };
       const custom = (options, isCustom, value) =>
-        isCustom ? [...options, [CUSTOM, `Custom: ${keptText(value)}`.replace("Custom: None", "Custom: none")]] : options;
+        isCustom ? [...options, [CUSTOM, t("custom", { value: keptText(value) })]] : options;
 
       // Suggestions
       this.suggestions = S.suggest(this.columns);
       const list = $c("[data-suggestion-list]");
-      const labels = JSON.stringify(this.suggestions.map((s) => s.label));
+      const labels = JSON.stringify(this.suggestions.map((s) => message(s.message)));
       if (list.dataset.labels !== labels) {
         list.dataset.labels = labels;
         list.replaceChildren(
           ...this.suggestions.map((s, i) =>
-            h("li", {}, h("button", { type: "button", className: "button button-small button-secondary", "data-suggestion": String(i), text: s.label })),
+            h("li", {}, h("button", { type: "button", className: "button button-small button-secondary", "data-suggestion": String(i), text: message(s.message) })),
           ),
         );
       }
@@ -807,7 +821,7 @@
       setOptions(
         arrangement,
         custom(
-          S.ARRANGEMENTS.filter(([, , marks]) => marks.includes(state.mark)).map(([v, l]) => [v, l]),
+          S.ARRANGEMENTS.filter(([, marks]) => marks.includes(state.mark)).map(([v]) => [v, t(`arrangement.${v || "stacked"}`)]),
           customStack,
           measure.extras.stack,
         ),
@@ -816,7 +830,7 @@
       const hint = $c("[data-arrangement-hint]");
       const needsColor = stackable && state.arrangement !== "none" && !S.hasField(state.channels.color);
       hint.hidden = !needsColor;
-      hint.textContent = needsColor ? `Choose a colour field to split the ${state.mark === "bar" ? "bars" : "areas"} into parts.` : "";
+      hint.textContent = needsColor ? t(`arrangementHint.${state.mark}`) : "";
       show("point", state.mark === "line" || state.mark === "area");
       show("donut", state.mark === "arc");
       setValue($c("[data-prop=point]"), state.point);
@@ -843,33 +857,33 @@
         const has = S.hasField(ch);
         const column = this.columns.find((c) => c.name === ch.field);
 
-        setOptions(prop("type"), custom(S.TYPES, isCustom("type"), extras.type));
+        setOptions(prop("type"), custom(S.TYPES.map((v) => [v, t(`type.${v}`)]), isCustom("type"), extras.type));
         setValue(prop("type"), isCustom("type") ? CUSTOM : ch.type || S.impliedType(ch));
         showIn("type", has && !ch.count);
 
-        setOptions(prop("aggregate"), custom([["", "No (one mark per row)"], ...S.AGGREGATES], isCustom("aggregate"), extras.aggregate));
+        setOptions(prop("aggregate"), custom([["", t("aggregate.none")], ...S.AGGREGATES.map((v) => [v, t(`aggregate.${v}`)])], isCustom("aggregate"), extras.aggregate));
         setValue(prop("aggregate"), isCustom("aggregate") ? CUSTOM : ch.aggregate);
         showIn("aggregate", has && !ch.count);
 
-        setOptions(prop("bin"), custom([["", "No"], ["bin", "Group into ranges (bins)"]], isCustom("bin"), extras.bin));
+        setOptions(prop("bin"), custom([["", t("bin.none")], ["bin", t("bin.bin")]], isCustom("bin"), extras.bin));
         setValue(prop("bin"), isCustom("bin") ? CUSTOM : ch.bin ? "bin" : "");
         showIn("bin", has && !ch.count && ((ch.type === "quantitative" && name !== "theta") || ch.bin || isCustom("bin")));
 
-        setOptions(prop("timeUnit"), custom([["", "None (exact values)"], ...S.TIME_UNITS], isCustom("timeUnit"), extras.timeUnit));
+        setOptions(prop("timeUnit"), custom([["", t("timeUnit.none")], ...S.TIME_UNITS.map((v) => [v, t(`timeUnit.${v}`)])], isCustom("timeUnit"), extras.timeUnit));
         setValue(prop("timeUnit"), isCustom("timeUnit") ? CUSTOM : ch.timeUnit);
         const temporalish = ch.type === "temporal" || (ch.type === "ordinal" && column?.type === "temporal");
         showIn("timeUnit", has && !ch.count && (temporalish || Boolean(ch.timeUnit) || isCustom("timeUnit")));
 
         const sortOptions = [
-          ["", "Default"],
-          ["ascending", "Ascending (A to Z, low to high)"],
-          ["descending", "Descending (Z to A, high to low)"],
-          ["none", "Order in the data"],
+          ["", t("sort.default")],
+          ["ascending", t("sort.ascending")],
+          ["descending", t("sort.descending")],
+          ["none", t("sort.none")],
         ];
         for (const other of S.SORT_CHANNELS) {
           if (other === name || !shown.has(other) || !S.hasField(state.channels[other])) continue;
-          const label = S.CHANNELS[other].label.replace(/ \(.*\)$/, "");
-          sortOptions.push([other, `By ${label}, ascending`], [`-${other}`, `By ${label}, descending`]);
+          const channel = t(`channelShort.${other}`);
+          sortOptions.push([other, t("sort.byAscending", { channel })], [`-${other}`, t("sort.byDescending", { channel })]);
         }
         if (ch.sort && !sortOptions.some(([v]) => v === ch.sort)) sortOptions.push([ch.sort, ch.sort]);
         setOptions(prop("sort"), custom(sortOptions, isCustom("sort"), extras.sort));
@@ -877,7 +891,7 @@
         showIn("sort", has && name !== "size" && name !== "theta");
 
         setValue(prop("title"), ch.title);
-        prop("title").placeholder = isCustom("title") ? keptText(extras.title) : "Default: the field name";
+        prop("title").placeholder = isCustom("title") ? keptText(extras.title) : t("titleDefault");
         showIn("title", has);
       }
 
@@ -890,9 +904,9 @@
         width,
         custom(
           [
-            ["container", "Fill the page width", facets && state.width !== "container"],
-            ["", "Automatic"],
-            ["fixed", "Fixed"],
+            ["container", t("width.container"), facets && state.width !== "container"],
+            ["", t("width.auto")],
+            ["fixed", t("width.fixed")],
           ],
           "width" in state.extras,
           state.extras.width,
@@ -919,10 +933,10 @@
             ]
           : [];
       this.$("[data-kept]").replaceChildren(
-        ...list("The builder doesn't edit these parts of the spec. They're kept as they are:", kept),
+        ...list(t("keptIntro"), kept),
       );
       this.$("[data-dropped]").replaceChildren(
-        ...list("Your changes remove these parts of the spec:", dropped),
+        ...list(t("droppedIntro"), dropped),
       );
       this.$("[data-kept-section]").hidden = !kept.length && !dropped.length;
     }
@@ -952,7 +966,7 @@
       try {
         await loadLibraries(this.config);
       } catch (e) {
-        show([`The preview isn't available: ${e.message}`]);
+        show([t("previewUnavailable", { error: e.message })]);
         return;
       }
       if (token !== this.previewToken || !this.dialog) return;
@@ -960,7 +974,11 @@
       const dark = Boolean(theme?.dark) && this.scheme === "dark";
       host.dataset.colorScheme = dark ? "dark" : "light";
       const internal = window.wagtailVega?._internal || {};
-      let full = previewSpec(spec, this.rows, theme, dark);
+      // Large datasets are previewed from a sample; the spec loads them all
+      const limit = this.config.previewRows || 5000;
+      const rows = this.rows.length > limit ? this.rows.slice(0, limit) : this.rows;
+      const sampled = rows === this.rows ? [] : [t("sampled", { shown: limit.toLocaleString(), total: this.rows.length.toLocaleString() })];
+      let full = previewSpec(spec, rows, theme, dark);
       if (internal.resolveVars) full = internal.resolveVars(full, host, theme?.fallbacks || {});
       const messages = [];
       const logger = window.vega.logger(window.vega.Warn);
@@ -997,11 +1015,11 @@
         this.view?.finalize();
         this.view = result.view;
         for (const child of [...host.children]) if (child !== target) child.remove();
-        show(messages.map((m) => `Note: ${m}`));
+        show([...sampled, ...messages.map((m) => t("previewNote", { message: m }))]);
       } catch (e) {
         target.remove();
         if (token !== this.previewToken) return;
-        show([`The preview can't be drawn yet: ${e.message}`, ...messages]);
+        show([t("previewError", { error: e.message }), ...messages]);
       }
     }
 
@@ -1019,12 +1037,12 @@
       const button = this.$("[data-use]");
       button.disabled = true;
       this.setErrors([]);
-      this.setStatus("Checking the chart…");
+      this.setStatus(t("checking"));
       try {
         const errors = await checkSpec(spec, this.config);
         if (errors.length) {
           this.setStatus("");
-          this.setErrors(["This chart can't be used as it is:", ...errors]);
+          this.setErrors([t("invalid"), ...errors]);
           return;
         }
       } catch (e) {
@@ -1077,8 +1095,8 @@
       document.documentElement.classList.remove("wagtail-vega-builder-open");
       this.trigger.focus();
       let note = "";
-      if (this.written) note = "The chart is now in the spec field.";
-      else if (this.unchanged) note = "The chart wasn't changed.";
+      if (this.written) note = t("note.written");
+      else if (this.unchanged) note = t("note.unchanged");
       this.launcher.note(note);
     }
   }
@@ -1105,13 +1123,40 @@
         return;
       }
       if (this.button) return;
+      // The text is the same for every button on the page
+      STRINGS = { ...STRINGS, ...(this.config.strings || {}) };
       this.button = this.querySelector("[data-builder-open]");
       this.noteEl = this.querySelector("[data-builder-note]");
       this.noteEl.id = `wagtail-vega-builder-note-${++uid}`;
+      this.hintEl = this.querySelector("[data-builder-hint]");
+      if (this.hintEl) this.hintEl.id = `wagtail-vega-builder-hint-${uid}`;
       this.button.addEventListener("click", () => this.open());
+      // The spec can change from the code editor, or be set by telepath
+      // after this connects (blocks added after the page loaded)
+      textarea?.addEventListener("input", () => this.showEmpty());
+      textarea?.addEventListener("change", () => this.showEmpty());
       // StructBlock renders its fields one after another; look for the
       // datasets field once they're all there.
-      setTimeout(() => this.refresh());
+      setTimeout(() => {
+        this.showEmpty();
+        this.refresh();
+      });
+    }
+
+    /** While the spec is empty, the button is the main action, with a hint. */
+    showEmpty() {
+      const value = this.textarea?.value.trim() ?? "";
+      const empty = (value === "" || value === "null") && !this.button.disabled;
+      this.classList.toggle("is-empty", empty);
+      this.button.classList.toggle("button-secondary", !empty);
+      if (this.hintEl) this.hintEl.hidden = !empty;
+      this.describe();
+    }
+
+    describe() {
+      const ids = [this.hintEl, this.noteEl].filter((el) => el && !el.hidden).map((el) => el.id);
+      if (ids.length) this.button.setAttribute("aria-describedby", ids.join(" "));
+      else this.button.removeAttribute("aria-describedby");
     }
 
     get config() {
@@ -1127,24 +1172,24 @@
       if (!dataField) {
         // e.g. a BaseChartBlock subclass whose data comes from code
         this.button.disabled = true;
-        this.note("The chart builder works with datasets added in this form. This chart's data comes from code.");
+        this.showEmpty();
+        this.note(t("note.codeData"));
       }
     }
 
     note(text) {
       this.noteEl.textContent = text;
       this.noteEl.hidden = !text;
-      if (text) this.button.setAttribute("aria-describedby", this.noteEl.id);
-      else this.button.removeAttribute("aria-describedby");
+      this.describe();
     }
 
     open() {
       const { textarea, dataField, themeField } = chartContext(this);
       if (!textarea || !dataField) return this.refresh();
-      if (!admin.chartSpec) return this.note("The chart builder's scripts aren't loaded.");
+      if (!admin.chartSpec) return this.note(t("note.scripts"));
       const datasets = readDatasets(dataField);
       if (!datasets.length) {
-        this.note("Add data to this chart's datasets first, then build the chart from it.");
+        this.note(t("note.noData"));
         return;
       }
       this.note("");
@@ -1158,6 +1203,6 @@
 
   // Internal helpers, exposed for tests. Not a public API.
   admin.chartBuilder = {
-    _internal: { urlAllowed, formatFromUrl, deepMerge, problemMessages, previewSpec, adminScheme },
+    _internal: { urlAllowed, formatFromUrl, deepMerge, problemMessages, previewSpec, adminScheme, t },
   };
 })();

@@ -42,71 +42,32 @@
 
   const VL_SCHEMA = "https://vega.github.io/schema/vega-lite/v6.json";
 
-  const MARKS = [
-    ["bar", "Bar"],
-    ["line", "Line"],
-    ["area", "Area"],
-    ["point", "Point (scatter plot)"],
-    ["circle", "Circle"],
-    ["square", "Square"],
-    ["tick", "Tick (strip plot)"],
-    ["arc", "Arc (pie or donut)"],
-    ["rect", "Rectangle (heatmap)"],
-    ["rule", "Rule"],
-  ];
-  const MARK_TYPES = new Set(MARKS.map(([value]) => value));
+  const MARKS = ["bar", "line", "area", "point", "circle", "square", "tick", "arc", "rect", "rule"];
+  const MARK_TYPES = new Set(MARKS);
 
-  const CHANNELS = {
-    x: { label: "X axis (horizontal)", titleLabel: "Axis title" },
-    y: { label: "Y axis (vertical)", titleLabel: "Axis title" },
-    theta: { label: "Slice size", titleLabel: "Legend title" },
-    color: { label: "Colour", titleLabel: "Legend title" },
-    size: { label: "Size", titleLabel: "Legend title" },
-    column: { label: "Columns (a small chart for each value)", titleLabel: "Heading" },
-    row: { label: "Rows (a small chart for each value)", titleLabel: "Heading" },
-  };
+  // Encoding channels the builder edits, in the order it shows them
+  const CHANNELS = ["x", "y", "theta", "color", "size", "column", "row"];
   // Order of the encodings in specs the builder writes
   const ENCODING_ORDER = ["x", "y", "xOffset", "yOffset", "theta", "color", "size", "column", "row"];
 
-  const TYPES = [
-    ["quantitative", "Number (quantitative)"],
-    ["nominal", "Category (nominal)"],
-    ["ordinal", "Ordered category (ordinal)"],
-    ["temporal", "Date or time (temporal)"],
-  ];
-  const AGGREGATES = [
-    ["sum", "Sum"],
-    ["mean", "Mean (average)"],
-    ["median", "Median"],
-    ["min", "Minimum"],
-    ["max", "Maximum"],
-    ["count", "Count"],
-    ["distinct", "Count of distinct values"],
-  ];
+  const TYPES = ["quantitative", "nominal", "ordinal", "temporal"];
+  const AGGREGATES = ["sum", "mean", "median", "min", "max", "count", "distinct"];
   const TIME_UNITS = [
-    ["year", "Year"],
-    ["yearquarter", "Year and quarter"],
-    ["yearmonth", "Year and month"],
-    ["yearmonthdate", "Date"],
-    ["yearmonthdatehours", "Date and hour"],
-    ["quarter", "Quarter (all years together)"],
-    ["month", "Month (all years together)"],
-    ["date", "Day of the month"],
-    ["day", "Day of the week"],
-    ["hours", "Hour of the day"],
+    "year", "yearquarter", "yearmonth", "yearmonthdate", "yearmonthdatehours",
+    "quarter", "month", "date", "day", "hours",
   ];
-  const TIME_UNIT_RE = new RegExp(`^(utc)?(${TIME_UNITS.map(([u]) => u).join("|")})$`);
+  const TIME_UNIT_RE = new RegExp(`^(utc)?(${TIME_UNITS.join("|")})$`);
   const SORT_CHANNELS = ["x", "y", "theta", "color", "size"];
   const SORT_RE = new RegExp(`^(ascending|descending|-?(${SORT_CHANNELS.join("|")}))$`);
 
   // How bars and areas that share a position are arranged ("" = Vega-Lite's
   // default, stacked). "grouped" is bars side by side (xOffset/yOffset).
   const ARRANGEMENTS = [
-    ["", "Stacked", ["bar", "area"]],
-    ["normalize", "Stacked to 100%", ["bar", "area"]],
-    ["center", "Stacked around the centre (streamgraph)", ["area"]],
-    ["grouped", "Side by side (grouped)", ["bar"]],
-    ["none", "Overlapping", ["bar", "area"]],
+    ["", ["bar", "area"]],
+    ["normalize", ["bar", "area"]],
+    ["center", ["area"]],
+    ["grouped", ["bar"]],
+    ["none", ["bar", "area"]],
   ];
   const STACK_VALUES = { normalize: "normalize", center: "center", none: null };
 
@@ -207,7 +168,7 @@
       title: "",
       width: "container", // "container", "" (automatic) or a number
       height: "", // "" (automatic) or a number
-      channels: Object.fromEntries(Object.keys(CHANNELS).map((c) => [c, emptyChannel()])),
+      channels: Object.fromEntries(CHANNELS.map((c) => [c, emptyChannel()])),
       encodingExtras: {}, // other channels, kept as they are
       extras: {}, // other top-level keys, kept as they are
     };
@@ -268,8 +229,9 @@
 
   // -- Suggestions --------------------------------------------------------------
 
-  /** A few sensible starting charts for the dataset's columns: [{label, apply}],
-   * where apply(state) sets the mark and encodings. Simple rules, best first. */
+  /** A few sensible starting charts for the dataset's columns, best first:
+   * [{message: {key, vars}, mark, channels, arrangement}]. `message` is
+   * the label, as a key into the builder's strings. Simple rules. */
   function suggest(columns) {
     const byType = (type) => columns.filter((c) => c.type === type);
     const quantitative = byType("quantitative");
@@ -284,33 +246,34 @@
     const [q1, q2, q3] = quantitative;
     const [t] = temporal;
     const out = [];
-    const add = (label, mark, channels, extra = {}) => out.push({ label, mark, channels, ...extra });
+    const add = (key, vars, mark, channels, extra = {}) =>
+      out.push({ message: { key: `suggest.${key}`, vars }, mark, channels, ...extra });
 
     if (t && q1) {
-      add(`Line: ${q1.name} over time (${t.name})`, "line", { x: [t], y: [q1] });
+      add("line", { x: t.name, y: q1.name }, "line", { x: [t], y: [q1] });
       if (g) {
-        add(`Lines: ${q1.name} over time, one for each ${g.name}`, "line", { x: [t], y: [q1], color: [g] });
-        add(`Stacked areas: ${q1.name} over time by ${g.name}`, "area", { x: [t], y: [q1], color: [g] });
+        add("lines", { y: q1.name, color: g.name }, "line", { x: [t], y: [q1], color: [g] });
+        add("areas", { y: q1.name, color: g.name }, "area", { x: [t], y: [q1], color: [g] });
       }
     }
     if (n1 && q1) {
-      add(`Bars: ${q1.name} by ${n1.name}`, "bar", { x: [n1], y: [q1, "sum"] });
+      add("bars", { x: n1.name, y: q1.name }, "bar", { x: [n1], y: [q1, "sum"] });
       if (g) {
-        add(`Grouped bars: ${q1.name} by ${n1.name} and ${g.name}`, "bar", { x: [n1], y: [q1, "sum"], color: [g] }, { arrangement: "grouped" });
-        add(`Stacked bars: ${q1.name} by ${n1.name} and ${g.name}`, "bar", { x: [n1], y: [q1, "sum"], color: [g] });
-        add(`Heatmap: ${q1.name} by ${n1.name} and ${g.name}`, "rect", { x: [n1], y: [g], color: [q1, "sum"] });
+        add("grouped", { x: n1.name, y: q1.name, color: g.name }, "bar", { x: [n1], y: [q1, "sum"], color: [g] }, { arrangement: "grouped" });
+        add("stacked", { x: n1.name, y: q1.name, color: g.name }, "bar", { x: [n1], y: [q1, "sum"], color: [g] });
+        add("heatmap", { x: n1.name, y: g.name, color: q1.name }, "rect", { x: [n1], y: [g], color: [q1, "sum"] });
       }
       const slices = groups.find((c) => c.distinct <= 8);
-      if (slices) add(`Pie: share of ${q1.name} by ${slices.name}`, "arc", { theta: [q1, "sum"], color: [slices] });
+      if (slices) add("pie", { theta: q1.name, color: slices.name }, "arc", { theta: [q1, "sum"], color: [slices] });
     }
     if (q1 && q2) {
       const color = g ? { color: [g] } : {};
       const size = q3 ? { size: [q3] } : {};
-      add(`Scatter plot: ${q2.name} against ${q1.name}`, "point", { x: [q1], y: [q2], ...color, ...size });
+      add("scatter", { x: q1.name, y: q2.name }, "point", { x: [q1], y: [q2], ...color, ...size });
     }
-    if (t && !q1) add(`Bars: rows per month (${t.name})`, "bar", { x: [t, null, "yearmonth"], y: [COUNT] });
-    if (n1 && !q1) add(`Bars: number of rows by ${n1.name}`, "bar", { x: [n1], y: [COUNT] });
-    if (q1 && !n1 && !t && !q2) add(`Histogram of ${q1.name}`, "bar", { x: [q1, null, null, true], y: [COUNT] });
+    if (t && !q1) add("perMonth", { x: t.name }, "bar", { x: [t, null, "yearmonth"], y: [COUNT] });
+    if (n1 && !q1) add("count", { x: n1.name }, "bar", { x: [n1], y: [COUNT] });
+    if (q1 && !n1 && !t && !q2) add("histogram", { x: q1.name }, "bar", { x: [q1, null, null, true], y: [COUNT] });
     return out;
   }
 
@@ -319,7 +282,7 @@
   function applySuggestion(state, suggestion, columns) {
     state.mark = suggestion.mark;
     state.arrangement = suggestion.arrangement || "";
-    for (const name of Object.keys(CHANNELS)) state.channels[name] = emptyChannel();
+    for (const name of CHANNELS) state.channels[name] = emptyChannel();
     for (const [name, [column, aggregate, timeUnit, bin]] of Object.entries(suggestion.channels)) {
       const ch = state.channels[name];
       setField(ch, column === COUNT ? COUNT : column.name, columns);
@@ -362,7 +325,7 @@
       ch.count = true;
       delete extras.aggregate;
     }
-    if (typeof extras.aggregate === "string" && AGGREGATES.some(([a]) => a === extras.aggregate)) {
+    if (typeof extras.aggregate === "string" && AGGREGATES.includes(extras.aggregate)) {
       ch.aggregate = extras.aggregate;
       delete extras.aggregate;
     }
@@ -377,7 +340,7 @@
       delete extras.timeUnit;
     }
     if ("type" in extras) {
-      if (TYPES.some(([t]) => t === extras.type)) {
+      if (TYPES.includes(extras.type)) {
         ch.type = extras.type;
         delete extras.type;
       }
@@ -405,40 +368,40 @@
    * Read a spec into a builder state.
    *
    * Returns {state, dataset} (the dataset name the spec uses, if any), or
-   * {problem} with a sentence fragment saying why the builder can't open it
+   * {problem: {key, vars}}, a message saying why the builder can't open it
    * ("it's a Vega spec…"). An empty spec (null) gives {state: null}.
    */
   function fromSpec(spec) {
     if (spec === null || spec === undefined) return { state: null };
-    if (!isObject(spec)) return { problem: "it isn't a JSON object" };
+    if (!isObject(spec)) return { problem: { key: "problem.notObject" } };
     if (!isVegaLite(spec)) {
       if (typeof spec.$schema === "string" && spec.$schema.includes("/vega/")) {
-        return { problem: "it's a Vega spec, and the builder makes Vega-Lite charts" };
+        return { problem: { key: "problem.vega" } };
       }
-      return { problem: "it has no Vega-Lite $schema" };
+      return { problem: { key: "problem.noSchema" } };
     }
     const composite = COMPOSITE.find((key) => key in spec);
     if (composite) {
-      return { problem: `it combines several views (it has “${composite}”), and the builder makes one view at a time` };
+      return { problem: { key: "problem.composite", vars: { key: composite } } };
     }
     const markType = isObject(spec.mark) ? spec.mark.type : spec.mark;
     if (!MARK_TYPES.has(markType)) {
       return {
         problem: markType
-          ? `the builder doesn't offer its mark type, “${markType}”`
-          : "it has no mark",
+          ? { key: "problem.mark", vars: { mark: String(markType) } }
+          : { key: "problem.noMark" },
       };
     }
     let dataset = null;
     if ("data" in spec) {
       const data = spec.data;
       if (!isObject(data) || typeof data.name !== "string" || Object.keys(data).length !== 1) {
-        return { problem: "it doesn't load its data from one of the chart's datasets by name" };
+        return { problem: { key: "problem.data" } };
       }
       dataset = data.name;
     }
     if ("encoding" in spec && !isObject(spec.encoding)) {
-      return { problem: "its encoding isn't an object" };
+      return { problem: { key: "problem.encoding" } };
     }
 
     const state = emptyState();
@@ -488,7 +451,7 @@
       const stack = measure.extras.stack;
       if ("stack" in measure.extras && !("stack" in other.extras)) {
         const found = Object.entries(STACK_VALUES).find(([, v]) => v === stack);
-        const allowed = found && ARRANGEMENTS.find(([a]) => a === found[0])[2].includes(markType);
+        const allowed = found && ARRANGEMENTS.find(([a]) => a === found[0])[1].includes(markType);
         if (allowed) {
           state.arrangement = found[0];
           delete measure.extras.stack;

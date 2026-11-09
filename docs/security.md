@@ -45,7 +45,7 @@ The editor itself, CodeMirror 6, is vendored like the Vega libraries (see {doc}`
 
 ### The chart builder
 
-The spec field's **Build chart** button (see {doc}`editor-experience`) opens the chart builder. It's wagtail-vega's own code, running in the admin page like the code editor, with no third-party code beyond the Vega libraries the site already ships:
+The spec field's **Build chart from data** button (see {doc}`editor-experience`) opens the chart builder. It's wagtail-vega's own code, running in the admin page like the code editor, with no third-party code beyond the Vega libraries the site already ships:
 
 - It reads the chart's data from the form. Documents are read through `/admin/wagtail-vega/document-rows/?id=…` ({py:func}`wagtail_vega.views.document_rows`), which needs permission to access the admin and to choose (or change) the document. URL datasets are fetched by the admin page, and only from the allowlist, checked on the URL as the browser resolves it.
 - The spec it writes refers to the dataset by name, so no data is copied into it. It's checked with the live validation endpoint above before it's written to the field, and again when the page is saved.

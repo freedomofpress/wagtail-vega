@@ -12,6 +12,12 @@
   width: 1rem;
   height: 1rem;
 }
+.wagtail-vega-spec__hint {
+  flex: 1 1 16rem;
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--w-color-text-context, inherit);
+}
 .wagtail-vega-spec__note {
   margin: 0;
   font-size: 0.875rem;
