@@ -139,7 +139,7 @@ Undo
 : **Undo changes since opening** puts back the spec the editor opened with. In the **Code** tab, Ctrl+Z (Cmd+Z) undoes one edit at a time, including changes made with the settings.
 
 Opening changes nothing
-: Opening the editor, looking around and closing it never changes the spec. An empty spec shows a suggested chart, but that's only put in the page once the editor changes a setting or picks a suggestion.
+: Opening the editor, looking around and closing it never changes an existing spec. Opening it on an **empty** spec, as in a new chart, puts the first suggested chart in the page straight away, so what the editor sees is what's saved; **Undo changes since opening** empties the field again. Clearing the code by hand leaves it empty.
 
 Invalid JSON
 : While the code isn't valid JSON, the settings and the preview stay at the last valid spec, and say why. The text is still written to the field, so nothing is lost. Wagtail's autosave refuses to save a form with errors and its indicator says so ("There are validation errors, click save to highlight them."); it saves again once the spec is fixed. Saving the page with invalid JSON shows the usual error, and keeps the text.

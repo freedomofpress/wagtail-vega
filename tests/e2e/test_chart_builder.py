@@ -402,9 +402,9 @@ def test_build_with_the_keyboard_and_save(name, editor, chart_page, live_server,
 
     dialog = open_builder(editor, block)
     expect(control(dialog, "mark")).to_be_focused()
-    # A suggestion is shown, but isn't in the field until a setting changes
-    expect(dialog.locator("[data-controls-notice]")).to_contain_text("isn't in the page yet")
-    assert spec_textarea(editor, block).input_value() == ""
+    # Opened on an empty spec, the suggested chart goes straight into the field
+    expect(dialog.locator("[role=status]")).to_contain_text("Started a new chart")
+    expect(spec_textarea(editor, block)).to_have_value(re.compile(r'"\$schema"'))
     run_steps(editor, dialog, steps)
     wait_for_preview(dialog)
     # Each setting goes straight into the code, and from there the field
@@ -1061,3 +1061,41 @@ def test_large_datasets_are_previewed_from_a_sample(editor):
         "The preview shows the first 10 of 48 rows. The chart on the page uses them all."
     )
     assert "datasets" not in json.loads(editor_text(editor, WEATHER))
+
+
+def test_new_chart_is_saved_even_if_closed_at_once(editor):
+    """Opening the editor on an empty spec writes the chart it shows, so
+    closing straight away doesn't leave a field that looked done but is
+    empty. Undo since opening empties it again."""
+    textarea = spec_textarea(editor)
+    set_externally(spec_field(editor), "")
+    dialog = open_builder(editor)
+    expect(textarea).to_have_value(re.compile(r'"\$schema"'))
+    written = json.loads(textarea.input_value())
+    assert written["data"] == {"name": "source"} and written["mark"]
+
+    press(editor, dialog.get_by_role("button", name="Undo changes since opening"))
+    expect(textarea).to_have_value("")
+
+    # Changing a setting writes again; Esc just closes and the field shows it
+    choose(editor, control(dialog, "mark"), "Line")
+    expect(textarea).to_have_value(re.compile('"line"'))
+    editor.keyboard.press("Escape")
+    expect(dialog).to_have_count(0)
+    expect(field_chart(editor).locator("svg")).to_have_count(1)
+
+
+def test_clearing_the_code_leaves_it_empty(editor):
+    """Only opening an empty spec starts from a suggestion: an editor who
+    clears the code on purpose isn't second-guessed."""
+    textarea = spec_textarea(editor)
+    dialog = open_builder(editor)
+    dialog.get_by_role("tab", name="Code").click()
+    code = dialog.locator("[data-code] .cm-content")
+    code.click()
+    editor.keyboard.press("ControlOrMeta+a")
+    editor.keyboard.press("Delete")
+    expect(textarea).to_have_value("")
+    expect(dialog.locator("[data-controls-notice]")).to_contain_text("isn't in the page yet")
+    editor.keyboard.press("Escape")
+    expect(textarea).to_have_value("")

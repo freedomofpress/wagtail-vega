@@ -52,6 +52,10 @@ def builder_strings() -> dict[str, str]:
             "This chart's data comes from code, so the visual settings aren't available. "
             "Edit the spec in the code."
         ),
+        "startedFromSuggestion": _(
+            "Started a new chart from a suggestion. It's in the page now: change anything, "
+            "or use “Undo changes since opening”."
+        ),
         "pending": _(
             "This suggested chart isn't in the page yet: change a setting or pick a "
             "suggestion to add it."

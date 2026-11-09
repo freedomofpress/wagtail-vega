@@ -749,6 +749,15 @@
       this.setStatus("");
       this.setErrors(errors);
       this.fromCode(this.text);
+      if (this.mode === "pending") {
+        // Opened on an empty spec: there's nothing to protect, so put the
+        // suggested chart in the page straight away, rather than showing a
+        // chart that isn't saved. ("Undo changes since opening" empties the
+        // field again.) Clearing the code later leaves it empty.
+        this.fromControls();
+        this.$("[data-suggestions]").open = true;
+        this.announce(t("startedFromSuggestion"));
+      }
       this.$("[data-start-fresh]").hidden = this.mode !== "unrepresentable";
       // Focus the first setting, unless the editor has already moved on
       const active = document.activeElement;

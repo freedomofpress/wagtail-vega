@@ -23,6 +23,7 @@
   "unrepresentable": "The visual settings can't show this spec: %(problem)s. Keep editing it in the code, or start a new chart from the data.",
   "noData": "The visual settings need a dataset with data in this form. Add data to the chart, or edit the spec in the code.",
   "codeData": "This chart's data comes from code, so the visual settings aren't available. Edit the spec in the code.",
+  "startedFromSuggestion": "Started a new chart from a suggestion. It's in the page now: change anything, or use “Undo changes since opening”.",
   "pending": "This suggested chart isn't in the page yet: change a setting or pick a suggestion to add it.",
   "startFresh": "Start a new chart",
   "preview": "Preview",
