@@ -17,6 +17,8 @@ export function loadScript(paths, globals = {}) {
   return window;
 }
 
+export const registeredFormats = {};
+
 export function loadFrontend(extra = {}) {
   const defined = {};
   const loader = {
@@ -24,7 +26,12 @@ export function loadFrontend(extra = {}) {
   };
   return loadScript("wagtail-vega.js", {
     vegaEmbed: async () => ({ view: { finalize() {} } }),
-    vega: { loader: () => ({ ...loader }), formats() {} },
+    vega: {
+      loader: () => ({ ...loader }),
+      formats: (name, reader) => { registeredFormats[name] = reader; },
+      Warn: 2,
+      logger: () => ({ warned: [], warn(...args) { this.warned.push(args); return this; } }),
+    },
     customElements: { get: (n) => defined[n], define: (n, c) => { defined[n] = c; } },
     HTMLElement: class {},
     CustomEvent: class {},

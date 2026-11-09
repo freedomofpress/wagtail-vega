@@ -104,6 +104,9 @@ def test_strict_csp(page, live_server, chart_page, settings, vega_settings, cons
     # The URL CSV was parsed without eval
     assert page.locator(CHARTS).nth(3).locator(".mark-rect path").count() > 0
     assert violations == [] and console_errors == []
+    # Vega's own CSV reader is untouched for other charts on the page
+    assert page.evaluate("vega.formats('wagtail-vega-csv') !== null")
+    assert not page.evaluate("vega.formats('csv').toString().includes('parseDelimited')")
 
 
 @pytest.mark.skipif(not ssr.is_available(), reason="vl-convert not installed")
@@ -154,3 +157,102 @@ def test_runtime_urls_outside_allowlist_are_blocked(page, live_server, transacti
     page.wait_for_timeout(1500)
     assert requested == []
     assert any("not allowed" in m for m in messages)
+
+
+def make_page(slug, *blocks):
+    from tests.testapp.demo import ensure_site
+    from tests.testapp.models import ChartPage
+
+    home = ensure_site().root_page
+    return home.add_child(instance=ChartPage(title=slug, slug=slug, body=list(blocks)))
+
+
+VG = "https://vega.github.io/schema/vega/v6.json"
+
+
+def vega_bars(data):
+    """A raw Vega bar chart over the "weather" dataset's rows."""
+    return {
+        "$schema": VG,
+        "width": 200,
+        "height": 100,
+        "data": [{"name": "weather"}],
+        "scales": [
+            {
+                "name": "x",
+                "type": "band",
+                "domain": {"data": "weather", "field": "date"},
+                "range": "width",
+            },
+        ],
+        "marks": [
+            {
+                "type": "rect",
+                "from": {"data": "weather"},
+                "encode": {
+                    "enter": {
+                        "x": {"scale": "x", "field": "date"},
+                        "width": {"scale": "x", "band": 1},
+                        "y": {"value": 0},
+                        "height": {"value": 10},
+                        "href": {"value": "https://elsewhere.example/story"},
+                    }
+                },
+            },
+        ],
+    }
+
+
+def url_chart(url):
+    return (
+        "chart",
+        {
+            "spec": vega_bars(None),
+            "data": [{"name": "weather", "source_type": "url", "url": url, "format": ""}],
+        },
+    )
+
+
+def test_vega_csv_url_without_format(page, live_server, transactional_db):
+    """Vega reads URLs as JSON unless told otherwise: the format is inferred."""
+    chart_page = make_page("vega-csv", url_chart("/static/testapp/weather.csv"))
+    page.goto(live_server.url + chart_page.url)
+    wait_for_charts(page, 1)
+    assert page.locator(".mark-rect path").count() == 48
+
+
+def test_data_errors_are_reported(page, live_server, transactional_db):
+    chart_page = make_page("broken", url_chart("/static/testapp/missing.csv"))
+    page.add_init_script(
+        """document.addEventListener("wagtail-vega:error",
+            (e) => { window.chartError = String(e.detail.error); })"""
+    )
+    page.goto(live_server.url + chart_page.url)
+    expect(page.locator(f"{CHARTS}.has-error")).to_have_count(1)
+    expect(page.locator(f"{CHARTS}.is-rendered")).to_have_count(0)
+    assert "Loading failed" in page.evaluate("window.chartError")
+
+
+def test_chart_links_to_other_hosts_work(page, live_server, transactional_db):
+    """The data allowlist doesn't apply to hyperlinks in charts."""
+    chart_page = make_page("links", url_chart("/static/testapp/weather.csv"))
+    page.route(
+        "https://elsewhere.example/**",
+        lambda route: route.fulfill(status=200, content_type="text/html", body="<p>story</p>"),
+    )
+    page.goto(live_server.url + chart_page.url)
+    wait_for_charts(page, 1)
+    with page.expect_request("https://elsewhere.example/story"):
+        page.locator(".mark-rect path").first.click()
+
+
+def test_page_body_without_context_loads_scripts_once(page, live_server, chart_page):
+    """{{ page.body }} renders blocks without a request; the loader keeps the
+    libraries from loading once per chart."""
+    requests = []
+    page.on("request", lambda r: requests.append(r.url))
+    page.goto(live_server.url + chart_page.url + "?raw=1")
+    wait_for_charts(page)
+    assert page.locator("script[src*='wagtail-vega-loader.js']").count() == 4
+    assert sum("vendor/vega.min.js" in u for u in requests) == 1
+    assert page.evaluate("document.querySelectorAll('script[src*=\"vega.min.js\"]').length") == 1

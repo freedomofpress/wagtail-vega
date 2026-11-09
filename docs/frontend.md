@@ -24,7 +24,7 @@ The chart template calls the tag before each chart. The tag remembers, on the `r
 - pages without charts don't load Vega;
 - pages with charts load it once, just before the first chart.
 
-If there's no `request` in the context, the tag can't remember, and the assets are output with every chart. Browsers only download them once, but it's untidy, so render blocks with `{% include_block %}`, which passes the context on.
+If there's no `request` in the context (for example, with `{{ page.body }}`), the tag can't remember. Each chart then outputs the stylesheet and a small loader script, `wagtail-vega-loader.js`. The first copy of the loader to run loads the libraries; the others do nothing. Prefer `{% include_block %}`, which passes the context on: the libraries then start downloading while the page is still being parsed, rather than after it.
 
 To load the assets in the `<head>` instead, call the tag in your base template. Charts later in the page then don't output them again:
 
@@ -89,7 +89,7 @@ Start from a copy of `wagtail_vega/chart.html`, and keep:
 - a `<wagtail-vega-chart>` element with `data-payload="{{ chart.payload_id }}"`;
 - `{{ chart.payload_script }}`.
 
-The element reads the payload when it's added to the page, so the payload script must be in the document by then. The default template puts the script after the element, which works because the scripts are deferred: the element isn't defined until the whole page has been parsed. If you load `wagtail-vega.js` without `defer`, or insert charts into a page that has already loaded it, put `{{ chart.payload_script }}` before the element.
+The element reads the payload when it's added to the page, so put `{{ chart.payload_script }}` **before** the element, as the default template does. Then the payload is in the document however and whenever the element is upgraded.
 
 The default template has no `{% block %}`s, so copy it rather than extending it. For example, this template adds a link under the chart, and leaves out the data table:
 
@@ -112,7 +112,9 @@ The default template has no `{% block %}`s, so copy it rather than extending it.
 
 `wagtail-vega.js` defines the `<wagtail-vega-chart>` custom element. When one is added to the page, it reads its payload and renders the chart. It renders again when the colour scheme changes or when asked to refresh. When it's removed from the page, it frees the Vega view.
 
-While it renders, the server-rendered SVG or `<noscript>` message stays in place. Once the chart is drawn, it replaces them, and the element gets the `is-rendered` class. If rendering fails, the element gets the `has-error` class, keeps its previous content, and logs the error to the console.
+While it renders, the server-rendered SVG or `<noscript>` message stays in place. Once the chart is drawn and its data has loaded, it replaces them, and the element gets the `is-rendered` class.
+
+If rendering fails, the element gets the `has-error` class, logs the error to the console, and fires `wagtail-vega:error`. That covers an invalid spec, and also data that fails to load or parse (a missing file, or CSV read as JSON). If the spec was invalid, the element keeps its previous content. If only the data failed, the chart's axes and frame are drawn without data.
 
 The element has:
 
@@ -149,7 +151,14 @@ The element has:
   document.dispatchEvent(new Event("wagtail-vega:refresh"));
   ```
 
-There's no event for errors. Check for the `has-error` class.
+`wagtail-vega:error`
+: Fired on the `<wagtail-vega-chart>` element when rendering fails or the chart's data doesn't load, and bubbles. Its `detail.error` is the `Error`:
+
+  ```js
+  document.addEventListener("wagtail-vega:error", (event) => {
+    reportError(`Chart ${event.target.id} failed: ${event.detail.error.message}`);
+  });
+  ```
 
 ### Colour-scheme toggles
 

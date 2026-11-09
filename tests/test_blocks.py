@@ -264,13 +264,60 @@ def test_render(vega_settings, vl_bar):
 
 def test_assets_tag_csp_safe(vega_settings):
     vega_settings["CSP_SAFE"] = True
-    html = wagtail_vega_assets({})
+    html = wagtail_vega_assets({"request": RequestFactory().get("/")})
     assert "vega-interpreter.js" in html
     assert (
         html.index("vega.min.js")
         < html.index("vega-interpreter.js")
         < html.index("wagtail-vega.js")
     )
+
+
+def test_assets_tag_without_request_uses_loader(vega_settings):
+    html = wagtail_vega_assets({})
+    assert "wagtail-vega.css" in html
+    assert 'src="/static/wagtail_vega/wagtail-vega-loader.js"' in html
+    attr = html.split('data-scripts="', 1)[1].split('"', 1)[0]
+    assert json.loads(attr.replace("&quot;", '"')) == [
+        "/static/wagtail_vega/vendor/vega.min.js",
+        "/static/wagtail_vega/vendor/vega-lite.min.js",
+        "/static/wagtail_vega/vendor/vega-embed.min.js",
+        "/static/wagtail_vega/wagtail-vega.js",
+    ]
+    assert '<script src="/static/wagtail_vega/vendor/' not in html
+    # Same output every time: the loader de-duplicates in the browser
+    assert wagtail_vega_assets({}) == html
+
+
+def test_payload_precedes_element(vega_settings, vl_bar):
+    block = ChartBlock()
+    html = block.render(chart_value(block, vl_bar, [("source", "csv", "a,b\nx,1")]))
+    assert html.index('type="application/json"') < html.index("<wagtail-vega-chart")
+
+
+def test_template_strings_are_translatable(vega_settings, vl_bar):
+    from unittest import mock
+
+    vega_settings["FALLBACK_TABLE_MAX_ROWS"] = 1
+    block = ChartBlock()
+    value = chart_value(block, vl_bar, [("source", "csv", "a\n1\n2")])
+    html = block.render(value)
+    assert "Chart data" in html and "Showing 1 of 2 rows." in html
+    assert "This chart needs JavaScript to display." in html
+
+    # {% translate %} goes through gettext_lazy, {% blocktranslate count %}
+    # through ngettext: fake a catalogue that marks every translated string.
+    with (
+        mock.patch("django.template.base.gettext_lazy", side_effect=lambda s: "~" + s),
+        mock.patch(
+            "django.utils.translation.ngettext",
+            side_effect=lambda s, p, n: "~" + (s if n == 1 else p),
+        ),
+    ):
+        html = block.render(value)
+    assert "~Chart data" in html
+    assert "~This chart needs JavaScript to display." in html
+    assert "~Showing 1 of 2 rows." in html
 
 
 def test_fallback_table_truncation_and_disable(vega_settings, vl_bar):

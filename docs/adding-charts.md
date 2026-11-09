@@ -149,11 +149,7 @@ A URL that the browser loads the data from, or the server when server-side rende
 - a path on your site, such as `/media/data.csv`;
 - an `http` or `https` URL on a host in `ALLOWED_DATA_HOSTS`.
 
-The **Format** choice sets the data format (CSV, TSV or JSON). If it's left as **Detect from the URL**, no format is set and Vega-Lite works it out from the URL's file extension.
-
-:::{warning}
-Vega (unlike Vega-Lite) doesn't look at the file extension, and treats data as JSON unless told otherwise. For raw Vega specs, set the format explicitly when the URL isn't JSON.
-:::
+The **Format** choice sets the data format (CSV, TSV or JSON). If it's left as **Detect from the URL**, the format comes from the URL's file extension (`.csv`, `.tsv` or `.json`). This matters for raw Vega specs, which otherwise read every URL as JSON. For URLs without one of those extensions, such as an API endpoint, choose the format.
 
 URL data isn't included in the fallback data table.
 
@@ -165,6 +161,6 @@ Chart blocks render like other blocks:
 html = block.render(value, context={"request": request})
 ```
 
-Without a `request` in the context, the CSS and scripts are output with every chart. In a Wagtail page template, `{% include_block %}` passes the page's context, including `request`, on to the block.
+Without a `request` in the context, each chart outputs a small loader script instead of the library scripts, and the loader makes sure the libraries load only once per page. In a Wagtail page template, `{% include_block %}` passes the page's context, including `request`, on to the block.
 
 `ChartBlock` doesn't have its own API representation, so in the Wagtail API it appears as the raw block value: the spec, and the dataset settings as the editor entered them.

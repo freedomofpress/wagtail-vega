@@ -75,6 +75,9 @@ The datasets are written into the page's HTML, as JSON. Only return data that ev
 
   remote_data("https://data.example.org/rates.csv", "csv")
   # {"url": "https://data.example.org/rates.csv", "format": {"type": "csv"}}
+
+  remote_data("https://data.example.org/rates.csv")  # format from the extension
+  # {"url": "https://data.example.org/rates.csv", "format": {"type": "csv"}}
   ```
 
   Remote datasets aren't in the fallback data table.
