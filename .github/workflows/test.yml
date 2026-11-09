@@ -1,0 +1,25 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { python: "3.10", wagtail: "wagtail>=7.0,<7.1" }
+          - { python: "3.12", wagtail: "wagtail>=7.0,<7.1" }
+          - { python: "3.13", wagtail: "wagtail>=8.1,<8.2" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e ".[dev]" "${{ matrix.wagtail }}"
+      - run: ruff check . && ruff format --check .
+      - run: pytest

@@ -1,0 +1,143 @@
+"""Pure functions for inspecting and transforming Vega / Vega-Lite specs."""
+
+from __future__ import annotations
+
+import copy
+from collections.abc import Iterator, Mapping
+from typing import Any
+from urllib.parse import urlsplit
+
+VEGA = "vega"
+VEGA_LITE = "vega-lite"
+
+# A dataset is either inline rows or a remote reference: {"url": ..., "format": {...}}
+Dataset = list | dict
+
+
+class SpecError(ValueError):
+    pass
+
+
+def spec_kind(spec: Mapping[str, Any]) -> str:
+    """Return ``"vega"`` or ``"vega-lite"`` based on the spec's ``$schema``."""
+    schema = spec.get("$schema")
+    if not isinstance(schema, str):
+        raise SpecError(
+            'The spec needs a "$schema", e.g. "https://vega.github.io/schema/vega-lite/v6.json".'
+        )
+    path = urlsplit(schema).path
+    if "/vega-lite/" in path:
+        return VEGA_LITE
+    if "/vega/" in path:
+        return VEGA
+    raise SpecError(f'Unrecognised "$schema": {schema}')
+
+
+def deep_merge(*dicts: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Recursively merge dicts; later arguments win."""
+    out: dict[str, Any] = {}
+    for d in dicts:
+        if not d:
+            continue
+        for key, value in d.items():
+            if isinstance(value, Mapping) and isinstance(out.get(key), dict):
+                out[key] = deep_merge(out[key], value)
+            else:
+                out[key] = copy.deepcopy(value)
+    return out
+
+
+def _walk(node: Any) -> Iterator[tuple[str | None, Any, Any]]:
+    """Yield ``(key, value, parent)`` for every value in a JSON tree."""
+    stack: list[tuple[str | None, Any, Any]] = [(None, node, None)]
+    while stack:
+        key, value, parent = stack.pop()
+        yield key, value, parent
+        if isinstance(value, dict):
+            stack.extend((k, v, value) for k, v in value.items())
+        elif isinstance(value, list):
+            stack.extend((None, v, value) for v in value)
+
+
+def remote_data(url: str, fmt: str | None = None) -> dict[str, Any]:
+    ref: dict[str, Any] = {"url": url}
+    if fmt:
+        ref["format"] = {"type": fmt}
+    return ref
+
+
+def is_remote(dataset: Dataset) -> bool:
+    return isinstance(dataset, dict) and "url" in dataset
+
+
+def inject_datasets(spec: Mapping[str, Any], datasets: Mapping[str, Dataset]) -> dict:
+    """Return a copy of ``spec`` with named datasets filled in.
+
+    Vega-Lite: inline rows go into the top-level ``datasets``; remote datasets
+    replace every ``{"name": <name>}`` data reference.
+
+    Vega: the matching entry of the top-level ``data`` array gets ``values``
+    (or ``url``/``format``), keeping its transforms. Unreferenced datasets
+    are appended so that signals/expressions can still use them.
+    """
+    spec = copy.deepcopy(dict(spec))
+    if not datasets:
+        return spec
+
+    if spec_kind(spec) == VEGA_LITE:
+        inline = {k: v for k, v in datasets.items() if not is_remote(v)}
+        remote = {k: v for k, v in datasets.items() if is_remote(v)}
+        if inline:
+            spec["datasets"] = {**spec.get("datasets", {}), **copy.deepcopy(inline)}
+        if remote:
+            for key, value, _parent in _walk(spec):
+                if key == "data" and isinstance(value, dict):
+                    name = value.get("name")
+                    if name in remote and set(value) <= {"name", "format"}:
+                        value.pop("name")
+                        value.update(copy.deepcopy(remote[name]))
+        return spec
+
+    entries = spec.setdefault("data", [])
+    by_name = {e.get("name"): e for e in entries if isinstance(e, dict)}
+    for name, dataset in datasets.items():
+        entry = by_name.get(name)
+        if entry is None:
+            entry = {"name": name}
+            entries.append(entry)
+        for k in ("values", "url", "source"):
+            entry.pop(k, None)
+        if is_remote(dataset):
+            entry.update(copy.deepcopy(dataset))
+        else:
+            entry["values"] = copy.deepcopy(dataset)
+    return spec
+
+
+def iter_urls(spec: Any) -> Iterator[str]:
+    """Yield every literal ``url`` string in the spec (data sources, images)."""
+    for key, value, _parent in _walk(spec):
+        if key == "url" and isinstance(value, str):
+            yield value
+
+
+def host_allowed(url: str, allowed_hosts: list[str]) -> bool:
+    """Relative URLs are same-origin and always allowed; absolute URLs must be
+    http(s) and on the allowlist ("*.example.com" also matches subdomains)."""
+    parts = urlsplit(url)
+    if not parts.scheme and not parts.netloc:
+        return True
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return False
+    host = parts.hostname.lower()
+    for pattern in allowed_hosts:
+        pattern = pattern.lower()
+        if pattern == "*" or pattern == host:
+            return True
+        if pattern.startswith("*.") and (host == pattern[2:] or host.endswith(pattern[1:])):
+            return True
+    return False
+
+
+def disallowed_urls(spec: Any, allowed_hosts: list[str]) -> list[str]:
+    return [u for u in iter_urls(spec) if not host_allowed(u, allowed_hosts)]

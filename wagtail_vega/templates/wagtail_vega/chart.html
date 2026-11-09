@@ -1,0 +1,24 @@
+{% load wagtail_vega %}{% wagtail_vega_assets %}
+<figure class="wagtail-vega" id="{{ chart.id }}"{% if chart.description %} aria-describedby="{{ chart.id }}-description"{% endif %}>
+    <wagtail-vega-chart class="wagtail-vega__chart" data-payload="{{ chart.payload_id }}">
+        {% if chart.svg %}<div class="wagtail-vega__ssr">{{ chart.svg|safe }}</div>{% else %}<noscript><p class="wagtail-vega__noscript">This chart needs JavaScript to display.</p></noscript>{% endif %}
+    </wagtail-vega-chart>
+    {{ chart.payload_script }}
+    {% if chart.description %}<p class="wagtail-vega__description" id="{{ chart.id }}-description">{{ chart.description }}</p>{% endif %}
+    {% if chart.tables %}
+    <details class="wagtail-vega__data">
+        <summary>Chart data</summary>
+        {% for table in chart.tables %}
+        <table>
+            {% if chart.tables|length > 1 %}<caption>{{ table.name }}</caption>{% endif %}
+            <thead><tr>{% for column in table.columns %}<th scope="col">{{ column }}</th>{% endfor %}</tr></thead>
+            <tbody>
+                {% for row in table.rows %}<tr>{% for cell in row %}<td>{{ cell|default_if_none:"" }}</td>{% endfor %}</tr>{% endfor %}
+            </tbody>
+        </table>
+        {% if table.truncated %}<p>Showing {{ table.rows|length }} of {{ table.total }} rows.</p>{% endif %}
+        {% endfor %}
+    </details>
+    {% endif %}
+    {% if chart.caption %}<figcaption class="wagtail-vega__caption">{{ chart.caption }}</figcaption>{% endif %}
+</figure>

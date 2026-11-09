@@ -1,0 +1,128 @@
+"""Chart themes.
+
+A theme is a Vega ``config`` object, so it can control fonts, colours, axes,
+legends and mark defaults. Themes are registered in settings::
+
+    WAGTAIL_VEGA = {
+        "THEMES": {
+            # A full theme definition
+            "house": {
+                "label": "House style",
+                "config": {"font": "Inter", "range": {"category": ["var(--brand)", "#888"]}},
+                "dark": {"background": "#111", "axis": {"labelColor": "#ddd"}},
+                "fallbacks": {"--brand": "#c0392b"},
+            },
+            # A plain dict is treated as the "config"
+            "minimal": {"view": {"stroke": None}},
+            # A dotted path to a dict defined in Python
+            "print": "myproject.charts.PRINT_THEME",
+            # One of the themes bundled with vega-embed
+            "538": "vega:fivethirtyeight",
+        },
+        "DEFAULT_THEME": "house",
+    }
+
+String values of the form ``var(--token)`` are resolved in the browser from
+CSS custom properties on the chart element. On the server (SSR), they are
+resolved from ``fallbacks``, or from a ``var(--token, fallback)`` default.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from typing import Any
+
+from django.core.exceptions import ImproperlyConfigured
+from django.utils.module_loading import import_string
+
+from .conf import get_setting
+
+BUILTIN_PREFIX = "vega:"
+THEME_KEYS = {"label", "config", "dark", "fallbacks", "vega_theme"}
+VAR_RE = re.compile(r"var\(\s*(--[\w-]+)\s*(?:,\s*([^)]*?)\s*)?\)")
+
+
+@dataclass(frozen=True)
+class Theme:
+    name: str
+    label: str
+    config: dict[str, Any] = field(default_factory=dict)
+    dark: dict[str, Any] | None = None
+    fallbacks: dict[str, str] = field(default_factory=dict)
+    # Name of a theme bundled with vega-embed (e.g. "dark", "fivethirtyeight")
+    vega_theme: str | None = None
+
+
+def build_theme(name: str, definition: Any) -> Theme:
+    if isinstance(definition, Theme):
+        return definition
+    if isinstance(definition, str):
+        if definition.startswith(BUILTIN_PREFIX):
+            builtin = definition[len(BUILTIN_PREFIX) :]
+            return Theme(name=name, label=name, vega_theme=builtin)
+        try:
+            definition = import_string(definition)
+        except ImportError as e:
+            raise ImproperlyConfigured(
+                f"WAGTAIL_VEGA theme {name!r}: cannot import {definition!r}"
+            ) from e
+        return build_theme(name, definition)
+    if not isinstance(definition, dict):
+        raise ImproperlyConfigured(
+            f"WAGTAIL_VEGA theme {name!r} must be a dict, dotted path or 'vega:<name>'"
+        )
+    if not (set(definition) & THEME_KEYS - {"label"}):
+        definition = {"config": definition}
+    unknown = set(definition) - THEME_KEYS
+    if unknown:
+        raise ImproperlyConfigured(
+            f"WAGTAIL_VEGA theme {name!r} has unknown keys: {sorted(unknown)}"
+        )
+    return Theme(
+        name=name,
+        label=definition.get("label", name),
+        config=definition.get("config") or {},
+        dark=definition.get("dark"),
+        fallbacks=definition.get("fallbacks") or {},
+        vega_theme=definition.get("vega_theme"),
+    )
+
+
+def get_themes() -> dict[str, Theme]:
+    return {
+        name: build_theme(name, definition) for name, definition in get_setting("THEMES").items()
+    }
+
+
+def get_theme(name: str | None) -> Theme | None:
+    """Look up a registered theme, falling back to ``DEFAULT_THEME``."""
+    themes = get_themes()
+    if name and name in themes:
+        return themes[name]
+    default = get_setting("DEFAULT_THEME")
+    if default:
+        if default not in themes:
+            raise ImproperlyConfigured(f"WAGTAIL_VEGA DEFAULT_THEME {default!r} is not in THEMES")
+        return themes[default]
+    return None
+
+
+def theme_choices() -> list[tuple[str, str]]:
+    """Choices for the editor-facing theme picker (blank = site default)."""
+    return [(name, theme.label) for name, theme in get_themes().items()]
+
+
+def resolve_css_vars(value: Any, fallbacks: dict[str, str]) -> Any:
+    """Replace ``var(--x)`` strings using ``fallbacks`` (used for SSR)."""
+    if isinstance(value, dict):
+        return {k: resolve_css_vars(v, fallbacks) for k, v in value.items()}
+    if isinstance(value, list):
+        return [resolve_css_vars(v, fallbacks) for v in value]
+    if isinstance(value, str) and "var(" in value:
+
+        def sub(m: re.Match) -> str:
+            return fallbacks.get(m.group(1)) or m.group(2) or m.group(0)
+
+        return VAR_RE.sub(sub, value)
+    return value
