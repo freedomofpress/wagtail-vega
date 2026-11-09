@@ -54,3 +54,9 @@ def test_ssr_serialises_decimals_as_numbers(monkeypatch):
     )
     ssr.render_svg({"datasets": {"s": [{"v": Decimal("1.5")}]}, "unique": 42}, "vega-lite")
     assert seen["spec"]["datasets"]["s"][0]["v"] == 1.5
+
+
+def test_ssr_skips_relative_urls(vl_bar, caplog):
+    vl_bar["data"] = {"url": "/media/data.csv"}
+    assert ssr.render_svg(vl_bar, "vega-lite") is None
+    assert not [r for r in caplog.records if r.levelname == "ERROR"]

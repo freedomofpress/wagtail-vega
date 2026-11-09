@@ -179,6 +179,12 @@
 
   customElements.define("wagtail-vega-chart", WagtailVegaChart);
 
+  // Internal helpers, exposed for tests. Not a public API.
+  window.wagtailVega = {
+    ...window.wagtailVega,
+    _internal: { resolveVars, hostAllowed, makeLoader, parseDelimited, dsvReader },
+  };
+
   document.addEventListener("wagtail-vega:refresh", () => {
     for (const el of document.querySelectorAll("wagtail-vega-chart")) el.refresh();
   });

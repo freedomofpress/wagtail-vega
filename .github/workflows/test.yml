@@ -5,21 +5,71 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
+    name: Python ${{ matrix.python }} · Wagtail ${{ matrix.wagtail }} · Django ${{ matrix.django }}
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.experimental || false }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { python: "3.10", wagtail: "wagtail>=7.0,<7.1" }
-          - { python: "3.12", wagtail: "wagtail>=7.0,<7.1" }
-          - { python: "3.13", wagtail: "wagtail>=8.1,<8.2" }
+          # Current LTS (supported until November 2027)
+          - { python: "3.10", wagtail: "7.4", django: "5.2" }
+          - { python: "3.13", wagtail: "7.4", django: "6.0" }
+          # Newer releases
+          - { python: "3.13", wagtail: "8.0", django: "6.0" }
+          - { python: "3.14", wagtail: "8.1", django: "6.1" }
+          # Wagtail's nightly build, to catch upcoming breakage early
+          - { python: "3.14", wagtail: "nightly", django: "6.1", experimental: true }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - run: pip install -e ".[dev]" "${{ matrix.wagtail }}"
+          allow-prereleases: true
+          cache: pip
+      - name: Install
+        run: |
+          if [ "${{ matrix.wagtail }}" = "nightly" ]; then
+            WAGTAIL="$(curl -s https://releases.wagtail.org/nightly/latest.json | jq -r .url)"
+          else
+            WAGTAIL="wagtail~=${{ matrix.wagtail }}.0"
+          fi
+          pip install -e ".[test]" "$WAGTAIL" "Django~=${{ matrix.django }}.0"
+          python -m playwright install --with-deps chromium
+          pip list | grep -iE "^(wagtail|django) "
+      - name: Test
+        run: python -m pytest -ra
+        env:
+          DATABASE_NAME: ":memory:"
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-${{ matrix.python }}-${{ matrix.wagtail }}-${{ matrix.django }}
+          path: test-results/
+          if-no-files-found: ignore
+
+  js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install ruff
       - run: ruff check . && ruff format --check .
-      - run: pytest

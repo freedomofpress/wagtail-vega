@@ -103,3 +103,6 @@ WAGTAIL_VEGA = {
     "CSP_SAFE": os.environ.get("WAGTAIL_VEGA_CSP_SAFE") == "1",
     "SSR": os.environ.get("WAGTAIL_VEGA_SSR") == "1",
 }
+
+# Test project only: see tests/testapp/middleware.py
+SANDBOX_STRICT_CSP = os.environ.get("WAGTAIL_VEGA_CSP_SAFE") == "1"

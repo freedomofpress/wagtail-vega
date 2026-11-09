@@ -23,7 +23,7 @@ from typing import Any
 
 from django import forms
 from django.core.exceptions import ValidationError
-from django.core.validators import RegexValidator
+from django.core.validators import RegexValidator, URLValidator
 from django.forms.fields import InvalidJSONInput
 from django.forms.utils import ErrorList
 from django.utils.functional import cached_property
@@ -141,6 +141,24 @@ PASTE, DOCUMENT, URL = "paste", "document", "url"
 SOURCE_FIELDS = {PASTE: ("paste",), DOCUMENT: ("document",), URL: ("url", "format")}
 
 
+def validate_data_url(value):
+    """Accept http(s) URLs and site-relative paths ("/media/data.csv")."""
+    if value.startswith("/") and not value.startswith("//"):
+        return
+    URLValidator(schemes=["http", "https"])(value)
+
+
+class DataURLBlock(blocks.CharBlock):
+    def __init__(self, **kwargs):
+        kwargs.setdefault("max_length", 2000)
+        kwargs.setdefault("validators", [validate_data_url])
+        kwargs.setdefault(
+            "help_text",
+            _("A full URL on an allowed host, or a path on this site such as /media/data.csv."),
+        )
+        super().__init__(**kwargs)
+
+
 class DocumentDataBlock(DocumentChooserBlock):
     def clean(self, value):
         value = super().clean(value)
@@ -183,7 +201,7 @@ class DatasetBlock(blocks.StructBlock):
     document = DocumentDataBlock(
         required=False, help_text=_("A .csv, .tsv or .json file with a header row.")
     )
-    url = blocks.URLBlock(required=False, label=_("URL"))
+    url = DataURLBlock(required=False, label=_("URL"))
     format = blocks.ChoiceBlock(
         choices=[
             ("", _("Detect from the URL")),
@@ -213,7 +231,7 @@ class DatasetBlock(blocks.StructBlock):
                 errors["paste"] = ValidationError(_("Couldn't read this data: %s") % e)
         elif source == DOCUMENT:
             if not value["document"]:
-                errors["document"] = ValidationError(_("Choose a document."))
+                errors["document"] = ValidationError(_("Select a document to load data from."))
         elif source == URL:
             if not value["url"]:
                 errors["url"] = ValidationError(_("Enter a URL."))

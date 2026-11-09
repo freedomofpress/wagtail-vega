@@ -7,3 +7,6 @@ __pycache__/
 /sandbox.sqlite3
 /media/
 /static/
+/.tox/
+/test-results/
+/node_modules/

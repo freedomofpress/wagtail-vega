@@ -139,13 +139,38 @@ No styles are injected at runtime: tooltip styles ship in `wagtail-vega.css`, so
   - only the light config is used;
   - `"width": "container"` charts render at a default width until JS takes over;
   - built-in (`vega:`) themes apply to Vega-Lite specs only.
+  - charts whose data comes from a relative URL (e.g. `/media/data.csv`) are left to the browser.
 - **Spec editing:** the admin uses a plain textarea for specs. Live preview works through Wagtail's page preview.
 
 ## Development
 
 ```sh
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/pytest
+.venv/bin/python -m playwright install chromium   # or pass --browser-channel chrome below
+.venv/bin/pytest                                   # Python, admin and browser tests
+npm test                                           # JS unit tests (node:test, no dependencies)
+```
+
+Supported versions: **Wagtail 7.4 LTS** and newer, with the Django and Python versions each supports. CI runs the full suite, browser tests included, on:
+- Wagtail 7.4 (with Django 5.2 and Django 6.0)
+- Wagtail 8.0
+- Wagtail 8.1
+- Wagtail's nightly build, as a non-blocking job
+
+To run the same matrix locally, use `tox` (e.g. `tox -e py310-wagtail74-django52 -- --browser-channel chrome`).
+
+Test layout:
+
+| Path | What it covers |
+| --- | --- |
+| `tests/test_*.py` | Unit tests: spec handling, validation, themes, data parsing, blocks, SSR |
+| `tests/test_admin.py` | Creating, validating and previewing chart pages through the Wagtail admin |
+| `tests/e2e/` | Playwright browser tests: the dataset editor UI, plus chart rendering with themes, dark mode, strict CSP, no JS and URL blocking |
+| `tests/js/` | Unit tests for the browser scripts' parsing, type detection and security helpers |
+
+The sandbox site:
+
+```sh
 .venv/bin/python manage.py migrate && .venv/bin/python manage.py seed_sandbox
 .venv/bin/python manage.py runserver          # http://localhost:8000, admin/admin
 WAGTAIL_VEGA_CSP_SAFE=1 WAGTAIL_VEGA_SSR=1 .venv/bin/python manage.py runserver  # strict CSP + SSR

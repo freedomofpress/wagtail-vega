@@ -48,6 +48,13 @@ def render_svg(spec: dict, kind: str, vega_theme: str | None = None) -> str | No
         logger.warning("wagtail-vega SSR is enabled but vl-convert is not installed")
         return None
 
+    relative = [u for u in iter_urls(spec) if not urlsplit(u).netloc]
+    if relative:
+        # vl-convert has no base URL to resolve these against, and fetching
+        # our own site mid-request could deadlock a single-threaded server.
+        logger.debug("wagtail-vega: not server-rendering spec with relative URLs %s", relative)
+        return None
+
     payload = json.dumps(spec, cls=VegaJSONEncoder, sort_keys=True)
     digest = hashlib.sha256(f"{kind}:{vega_theme}:{payload}".encode()).hexdigest()
     key = f"wagtail_vega:svg:{digest}"

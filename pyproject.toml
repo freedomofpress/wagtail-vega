@@ -12,16 +12,24 @@ authors = [{ name = "Freedom of the Press Foundation" }]
 classifiers = [
     "Framework :: Django",
     "Framework :: Wagtail",
+    "Framework :: Django :: 5.2",
+    "Framework :: Django :: 6.0",
+    "Framework :: Django :: 6.1",
     "Framework :: Wagtail :: 7",
     "Framework :: Wagtail :: 8",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3",
 ]
-dependencies = ["wagtail>=7.0", "jsonschema>=4.18"]
+dependencies = ["wagtail>=7.4", "jsonschema>=4.18"]
 
 [project.optional-dependencies]
 ssr = ["vl-convert-python>=1.7"]
-test = ["pytest>=8", "pytest-django>=4.9", "vl-convert-python>=1.7"]
-dev = ["wagtail-vega[test]", "ruff"]
+test = ["pytest>=8", "pytest-django>=4.9", "vl-convert-python>=1.7", "pytest-playwright>=0.7"]
+dev = ["wagtail-vega[test]", "ruff", "tox>=4"]
 
 [tool.hatch.version]
 path = "wagtail_vega/__init__.py"
@@ -35,6 +43,11 @@ packages = ["wagtail_vega"]
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "tests.settings"
 testpaths = ["tests"]
+markers = ["e2e: browser tests using Playwright (tests/e2e)"]
+filterwarnings = [
+    # pytest-playwright's base_url fixture vs. pytest-django's live_server
+    "ignore:Session-scoped fixtures defined as instance methods:DeprecationWarning",
+]
 
 [tool.ruff]
 target-version = "py310"

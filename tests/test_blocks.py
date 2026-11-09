@@ -379,3 +379,26 @@ def test_dataset_block_admin_adapter():
     ctx.pack(DatasetBlock())
     assert "wagtail_vega/admin/dataset-block.js" in str(ctx.media)
     assert "wagtail_vega/admin/dataset-block.css" in str(ctx.media)
+
+
+@pytest.mark.parametrize(
+    "url,ok",
+    [
+        ("/media/data.csv", True),
+        ("https://ok.org/d.csv", True),
+        ("http://ok.org/d.csv", True),
+        ("//evil.org/d.csv", False),
+        ("javascript:alert(1)", False),
+        ("ftp://ok.org/d.csv", False),
+        ("data.csv", False),
+    ],
+)
+def test_dataset_url_accepts_relative_paths(vega_settings, url, ok):
+    vega_settings["ALLOWED_DATA_HOSTS"] = ["ok.org"]
+    block = DatasetBlock()
+    value = block.to_python({"name": "s", "source_type": "url", "url": url})
+    if ok:
+        assert block.clean(value)["url"] == url
+    else:
+        with pytest.raises(StructBlockValidationError):
+            block.clean(value)

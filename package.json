@@ -1,0 +1,11 @@
+{
+  "name": "wagtail-vega-js-tests",
+  "private": true,
+  "description": "Unit tests for wagtail-vega's browser scripts. No dependencies: uses node:test.",
+  "scripts": {
+    "test": "node --test tests/js/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

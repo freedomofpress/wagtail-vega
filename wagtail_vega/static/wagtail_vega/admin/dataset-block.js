@@ -180,4 +180,9 @@
   }
 
   window.telepath.register("wagtail_vega.blocks.DatasetBlock", DatasetBlockDefinition);
+
+  // Internal helpers, exposed for tests. Not a public API.
+  window.wagtailVegaAdmin = {
+    _internal: { detectFormat, parseDelimited, valueType, columnType, summarise },
+  };
 })();
