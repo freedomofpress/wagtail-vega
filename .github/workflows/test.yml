@@ -63,6 +63,11 @@ jobs:
         with:
           node-version: 22
       - run: npm test
+      - name: Check the vendored CodeMirror bundle is reproducible
+        run: |
+          npm ci
+          npm run build
+          git diff --exit-code wagtail_vega/static/wagtail_vega/admin/vendor/
 
   lint:
     runs-on: ubuntu-latest
