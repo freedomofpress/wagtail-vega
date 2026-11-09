@@ -178,3 +178,57 @@ def test_preview_renders_chart(admin_client, add_url):
     html = admin_client.get(preview_url).content.decode()
     assert "<wagtail-vega-chart" in html and "Preview me" in html
     assert '"Q9"' in html
+
+
+# -- Wagtail API (#9) -------------------------------------------------------------
+
+
+def test_api_representation(client, home):
+    import datetime
+    from decimal import Decimal
+
+    from tests.testapp.models import Donation
+
+    Donation.objects.create(month=datetime.date(2026, 1, 1), total=Decimal("12.50"))
+    donations_spec = {**BAR, "data": {"name": "donations"}}
+    page = home.add_child(
+        instance=ChartPage(
+            title="API",
+            slug="api",
+            body=[
+                (
+                    "chart",
+                    {
+                        "spec": BAR,
+                        "data": [
+                            {
+                                "name": "source",
+                                "source_type": "paste",
+                                "paste": "quarter,requests\nQ1,5",
+                            }
+                        ],
+                        "description": "Requests",
+                        "caption": "FOIA logs",
+                        "theme": "",
+                    },
+                ),
+                ("donations_chart", {"spec": donations_spec, "description": "", "caption": ""}),
+            ],
+        )
+    )
+    response = client.get(f"/api/v2/pages/{page.pk}/")
+    assert response.status_code == 200
+    chart, donations = (block["value"] for block in response.json()["body"])
+
+    # The final spec, ready for vega-embed: data injected, theme merged
+    assert chart["kind"] == "vega-lite"
+    assert chart["spec"]["datasets"]["source"] == [{"quarter": "Q1", "requests": 5}]
+    assert chart["spec"]["config"]["font"] == "Georgia, serif"  # the test project's theme
+    assert chart["darkConfig"]["axis"]["labelColor"] == "#ddd"
+    assert chart["embed"]["defaultStyle"] is False
+    assert chart["description"] == "Requests" and chart["caption"] == "FOIA logs"
+    assert "vega.github.io" in chart["allowedHosts"]
+    # Data from code, JSON-encoded the same way as on the page
+    assert donations["spec"]["datasets"]["donations"] == [{"month": "2026-01-01", "total": 12.5}]
+    # The raw editor input isn't exposed
+    assert "paste" not in json.dumps(chart)

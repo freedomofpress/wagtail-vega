@@ -78,3 +78,18 @@ def _media_root(settings, tmp_path):
     """Uploads go to a fresh folder per test, as on CI. (A shared folder makes
     Django rename duplicate filenames, which can hide caching bugs.)"""
     settings.MEDIA_ROOT = tmp_path / "media"
+
+
+@pytest.fixture(autouse=True)
+def _site_hosts(request, monkeypatch):
+    """The data allowlist includes the site's own hostnames, which come from
+    the database. Tests without database access get none."""
+    uses_db = request.node.get_closest_marker("django_db") or {
+        "db",
+        "transactional_db",
+        "admin_client",
+        "admin_user",
+        "live_server",
+    } & set(request.fixturenames)
+    if not uses_db:
+        monkeypatch.setattr("wagtail_vega.conf.site_hosts", lambda: [])

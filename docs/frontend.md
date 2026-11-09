@@ -184,11 +184,33 @@ Charts work in content added to the page later, for example with htmx, Turbo or 
 
 The `EMBED_OPTIONS` setting and the block's `embed_options` option are passed to [vega-embed](https://github.com/vega/vega-embed#options). wagtail-vega always sets some options itself:
 
-- `defaultStyle: false` and `tooltip: {"disableDefaultStyle": true}`, so vega-embed doesn't add `<style>` elements. Tooltip styles ship in `wagtail-vega.css` instead. As a result, vega-tooltip options can't be set through `embed_options`.
+- `defaultStyle: false`, and `disableDefaultStyle: true` in the tooltip options, so vega-embed and vega-tooltip don't add `<style>` elements. Their styles ship in `wagtail-vega.css` instead, including the actions menu's. Other [vega-tooltip options](https://github.com/vega/vega-tooltip/blob/main/docs/APIs.md#options) given as a dict are kept, and `"tooltip": False` turns tooltips off. Unless you set the tooltip `theme`, it follows the chart's colour scheme (`"light"` or `"dark"`).
 - `loader`, to the restricted data loader (see {doc}`security`).
 - `theme`, when the chart's theme uses a built-in vega-embed theme.
 - `ast` and `expr`, in CSP-safe mode.
 
+The options are merged in this order, each over the last: the defaults (`{"actions": False, "renderer": "svg"}`), the `EMBED_OPTIONS` setting, and the block's `embed_options`.
+
 :::{warning}
-`EMBED_OPTIONS` replaces the default, `{"actions": False, "renderer": "svg"}`, rather than adding to it. If you set it, include `"actions": False` unless you want vega-embed's actions menu. The menu's styles are part of vega-embed's default style, which wagtail-vega turns off, so it appears unstyled unless you style it yourself.
+vega-embed's actions menu (`"actions": True`) includes **Open in Vega Editor**, which sends the chart's spec, data included, to the Vega Editor at vega.github.io. If charts may hold unpublished data, leave actions off, or pick the ones you want: `"actions": {"export": True, "source": False, "compiled": False, "editor": False}`.
 :::
+
+## The Wagtail API
+
+Chart blocks implement `get_api_representation()`, so [Wagtail's API](https://docs.wagtail.org/en/stable/advanced_topics/api/) returns something a headless frontend can render, rather than the editor's raw input:
+
+```json
+{
+  "kind": "vega-lite",
+  "spec": {"$schema": "…", "datasets": {"source": [{"quarter": "Q1", "requests": 5}]}, "config": {"font": "…"}},
+  "darkConfig": {"font": "…", "axis": {"labelColor": "#ddd"}},
+  "embed": {"actions": false, "renderer": "svg", "defaultStyle": false, "tooltip": {"disableDefaultStyle": true}},
+  "fallbacks": {"--brand": "#c0392b"},
+  "allowedHosts": ["vega.github.io"],
+  "cspSafe": false,
+  "description": "Requests per quarter",
+  "caption": "Source: FOIA logs"
+}
+```
+
+That's the same payload `<wagtail-vega-chart>` reads, plus the description and caption. Render it with vega-embed: use `darkConfig` as the spec's `config` in dark mode, resolve any `var(--…)` strings (or replace them with `fallbacks`), and keep data loading to `allowedHosts`, as `wagtail-vega.js` does.

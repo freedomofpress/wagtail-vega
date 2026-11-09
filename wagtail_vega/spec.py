@@ -155,13 +155,30 @@ def iter_urls(spec: Any) -> Iterator[str]:
         yield url
 
 
+# C0 control characters and space, which browsers strip from both ends of a URL
+_URL_STRIP = "".join(chr(c) for c in range(0x21))
+
+
+def normalize_url(url: str) -> str:
+    """Normalise a URL the way browsers do before resolving it (WHATWG URL
+    parsing), so the server checks the URL the browser will actually fetch:
+    leading and trailing control characters and spaces are stripped, tabs and
+    newlines are removed, and backslashes count as slashes (on an http(s)
+    page, ``/\\evil.example/x`` means ``//evil.example/x``)."""
+    url = url.strip(_URL_STRIP)
+    url = url.replace("\t", "").replace("\n", "").replace("\r", "")
+    return url.replace("\\", "/")
+
+
 def host_allowed(url: str, allowed_hosts: list[str]) -> bool:
     """Relative URLs are same-origin and always allowed; absolute URLs must be
-    http(s) and on the allowlist (``"*.example.com"`` also matches subdomains)."""
-    parts = urlsplit(url)
+    http(s) and on the allowlist (``"*.example.com"`` also matches subdomains).
+    URLs are normalised first (see :func:`normalize_url`)."""
+    parts = urlsplit(normalize_url(url))
     if not parts.scheme and not parts.netloc:
         return True
-    if parts.scheme not in ("http", "https") or not parts.hostname:
+    # "//host/x" is fetched with the page's scheme, http(s)
+    if parts.scheme not in ("", "http", "https") or not parts.hostname:
         return False
     host = parts.hostname.lower()
     for pattern in allowed_hosts:

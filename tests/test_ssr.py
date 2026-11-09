@@ -60,3 +60,9 @@ def test_ssr_skips_relative_urls(vl_bar, caplog):
     vl_bar["data"] = {"url": "/media/data.csv"}
     assert ssr.render_svg(vl_bar, "vega-lite") is None
     assert not [r for r in caplog.records if r.levelname == "ERROR"]
+
+
+def test_ssr_base_urls_normalised(vega_settings, vl_bar):
+    vega_settings["ALLOWED_DATA_HOSTS"] = ["ok.org"]
+    vl_bar["data"] = {"url": "/\\evil.example/x.csv"}
+    assert ssr.allowed_base_urls(vl_bar) == []

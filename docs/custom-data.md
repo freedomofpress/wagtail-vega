@@ -83,7 +83,7 @@ The datasets are written into the page's HTML, as JSON. Only return data that ev
   Remote datasets aren't in the fallback data table.
 
 :::{important}
-URLs you return from `get_datasets()` aren't checked when the page is saved, but the browser refuses to load them unless they're same-origin or on a host in `ALLOWED_DATA_HOSTS`. Server-side rendering only fetches from allowed hosts too. Add the host to `ALLOWED_DATA_HOSTS`, and to your Content Security Policy's `connect-src` if you have one. See {doc}`security`.
+URLs you return from `get_datasets()` aren't checked when the page is saved, but the browser refuses to load them unless they're on your own site or a host in `ALLOWED_DATA_HOSTS`, and a warning is logged on the `wagtail_vega.blocks` logger when the chart is rendered. Server-side rendering only fetches from allowed hosts too. Add the host to `ALLOWED_DATA_HOSTS`, and to your Content Security Policy's `connect-src` if you have one. See {doc}`security`.
 :::
 
 For how each dataset ends up in the spec, see {doc}`overview`.
@@ -240,7 +240,7 @@ Editors then only fill in the description and caption. A spec returned from `get
 | `get_datasets(value, context=None)` | `{name: dataset}` | `{}`. `ChartBlock` returns the editor's datasets. |
 | `get_spec(value, context=None, datasets=None, theme=None, dark=False)` | The final spec | Calls `get_spec_source()`, injects `datasets` and merges in the theme config. Builds the dark config when `dark` is true. |
 | `get_spec_source(value)` | The spec as written | `value["spec"]`. Called by `get_spec()`. |
-| `get_embed_options(value, context=None, theme=None)` | vega-embed options | The `EMBED_OPTIONS` setting, then `Meta.embed_options`, plus the theme's built-in vega-embed theme. |
+| `get_embed_options(value, context=None, theme=None)` | vega-embed options | The defaults, then the `EMBED_OPTIONS` setting, then `Meta.embed_options`, each merged over the last, plus the theme's built-in vega-embed theme. |
 | `use_ssr(value)` | `bool` | `Meta.ssr`, else the `SSR` setting. |
 | `use_fallback_table(value)` | `bool` | `Meta.fallback_table`, else the `FALLBACK_TABLE` setting. |
 | `build_chart(value, context=None)` | A {py:class}`~wagtail_vega.blocks.Chart` | Calls the hooks above. |
@@ -249,7 +249,7 @@ Editors then only fill in the description and caption. A spec returned from `get
 
 The default `get_spec()` deep-copies the spec before changing it, so `get_spec_source()` can return a shared dict, like `DONATIONS_SPEC` above.
 
-`get_embed_options()` always sets `defaultStyle: False` and `tooltip: {"disableDefaultStyle": True}`, so that vega-embed doesn't inject styles. See {doc}`security`.
+`get_embed_options()` always sets `defaultStyle: False`, and `disableDefaultStyle: True` in the tooltip options, so that vega-embed doesn't inject styles. See {doc}`security`.
 
 The template gets the `Chart` as `chart` in its context. To add to it, override `get_context()`:
 

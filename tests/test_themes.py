@@ -73,3 +73,65 @@ def test_resolve_css_vars_leaves_data_alone():
     assert out["data"] == spec["data"]
     assert out["datasets"] == spec["datasets"]
     assert out["layer"][0]["data"] == spec["layer"][0]["data"]
+
+
+def test_plain_dict_label_is_kept_out_of_the_config():
+    theme = build_theme("print", {"label": "Print", "font": "Times"})
+    assert theme.label == "Print"
+    assert theme.config == {"font": "Times"}
+
+
+def test_missing_theme_is_logged(vega_settings, caplog):
+    vega_settings.update(THEMES={"a": {"font": "A"}}, DEFAULT_THEME="a")
+    assert get_theme("removed").name == "a"
+    assert "'removed' isn't in THEMES" in caplog.text
+
+
+# -- System checks (#7) ---------------------------------------------------------
+
+
+def test_checks_pass_for_valid_settings(vega_settings):
+    from wagtail_vega.checks import check_themes
+
+    vega_settings.update(THEMES={"a": {"font": "A"}, "b": "vega:dark"}, DEFAULT_THEME="a")
+    assert check_themes() == []
+
+
+def test_checks_report_bad_themes_and_default(vega_settings):
+    from wagtail_vega.checks import check_themes
+
+    vega_settings.update(THEMES={"ok": {}, "bad": "no.such.module.THEME"}, DEFAULT_THEME="nope")
+    errors = {e.id: e for e in check_themes()}
+    assert set(errors) == {"wagtail_vega.E001", "wagtail_vega.E002"}
+    assert "no.such.module" in errors["wagtail_vega.E001"].msg
+    assert "'nope'" in errors["wagtail_vega.E002"].msg
+    assert "bad, ok" in errors["wagtail_vega.E002"].hint
+
+
+def test_block_meta_theme_is_checked(vega_settings):
+    from wagtail_vega.blocks import ChartBlock
+
+    vega_settings.update(THEMES={"house": {}})
+
+    class Typo(ChartBlock):
+        class Meta:
+            theme = "hosue"
+
+    class Fine(ChartBlock):
+        class Meta:
+            theme = "house"
+
+    errors = Typo().check()
+    assert [e.id for e in errors] == ["wagtail_vega.E003"]
+    assert "'hosue'" in errors[0].msg
+    assert Fine().check() == []
+
+
+@pytest.mark.django_db
+def test_django_check_command_runs_our_checks(vega_settings):
+    from django.core.management import call_command
+    from django.core.management.base import SystemCheckError
+
+    vega_settings.update(THEMES={}, DEFAULT_THEME="missing")
+    with pytest.raises(SystemCheckError, match="wagtail_vega.E002"):
+        call_command("check")
