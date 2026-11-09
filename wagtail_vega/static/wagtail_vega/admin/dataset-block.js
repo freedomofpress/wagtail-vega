@@ -75,6 +75,50 @@
     return "mixed";
   }
 
+  // Mirrors wagtail_vega.data._coerce: numbers, booleans and blanks become
+  // typed values; leading-zero codes and everything else stay as text.
+  function coerce(value) {
+    const stripped = value.trim();
+    if (stripped === "") return null;
+    const lowered = stripped.toLowerCase();
+    if (lowered === "true" || lowered === "false") return lowered === "true";
+    if (LEADING_ZERO_RE.test(stripped)) return value;
+    let number = stripped;
+    if (THOUSANDS_RE.test(stripped)) number = stripped.replaceAll(",", "");
+    else if (!NUMBER_RE.test(stripped)) return value;
+    return Number(number);
+  }
+
+  // Mirrors wagtail_vega.data.parse_json
+  function parseJsonRows(text) {
+    let data = JSON.parse(text);
+    if (data && !Array.isArray(data) && typeof data === "object" && "values" in data) {
+      data = data.values;
+    }
+    if (!Array.isArray(data)) throw new Error("JSON data must be an array of rows.");
+    return data;
+  }
+
+  // Mirrors wagtail_vega.data.parse_delimited (csv.DictReader): blank lines
+  // are skipped, short rows are padded with null, extra cells are dropped.
+  function parseDelimitedRows(text, delimiter) {
+    const [header = [], ...rows] = parseDelimited(text.trim(), delimiter);
+    return rows
+      .filter((row) => !(row.length === 1 && row[0] === ""))
+      .map((row) => Object.fromEntries(header.map((name, i) => [name, coerce(row[i] ?? "")])));
+  }
+
+  /** Parse data as the server would: rows (objects) from CSV/TSV/JSON text.
+   * ``format`` is "csv", "tsv", "json", or empty to detect it like
+   * wagtail_vega.data.parse_text. Throws on invalid JSON. */
+  function parseRows(text, format) {
+    text = String(text ?? "").replace(/^﻿/, "");
+    if (!text.trim()) return [];
+    const fmt = format || detectFormat(text);
+    if (fmt === "json") return parseJsonRows(text);
+    return parseDelimitedRows(text, DELIMITERS[fmt] ?? ",");
+  }
+
   /** Returns {ok, message, warning} describing the pasted text. */
   function summarise(text) {
     if (!text.trim()) return null;
@@ -181,8 +225,10 @@
 
   window.telepath.register("wagtail_vega.blocks.DatasetBlock", DatasetBlockDefinition);
 
-  // Internal helpers, exposed for tests. Not a public API.
+  // Internal helpers, exposed for tests and the Voyager launcher. Not a
+  // public API.
   window.wagtailVegaAdmin = {
-    _internal: { detectFormat, parseDelimited, valueType, columnType, summarise },
+    ...window.wagtailVegaAdmin,
+    _internal: { detectFormat, parseDelimited, valueType, columnType, summarise, coerce, parseRows },
   };
 })();

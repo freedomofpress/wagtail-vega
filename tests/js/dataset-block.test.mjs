@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { loadAdmin, plain } from "./load.mjs";
 
 const { window, registered } = loadAdmin();
-const { detectFormat, parseDelimited, valueType, columnType, summarise } =
+const { detectFormat, parseDelimited, valueType, columnType, summarise, coerce, parseRows } =
   window.wagtailVegaAdmin._internal;
 
 test("registers the telepath definition", () => {
@@ -75,6 +75,49 @@ test("summarise: errors", () => {
   assert.match(summarise("[oops").message, /couldn't be read/);
   assert.equal(summarise('{"a": 1}').message, "JSON data must be an array of rows.");
   assert.match(summarise("header_only").message, /No data rows/);
+});
+
+// parseRows / coerce must match wagtail_vega.data (same cases as tests/test_data.py),
+// so Voyager sees the values the chart will.
+test("parseRows infers types like parse_delimited", () => {
+  assert.deepEqual(plain(parseRows("a,b,c,d\nx,1,2.5,true\ny,,nan,2024-01-01\n")), [
+    { a: "x", b: 1, c: 2.5, d: true },
+    { a: "y", b: null, c: "nan", d: "2024-01-01" },
+  ]);
+});
+
+test("parseRows: spreadsheet paste", () => {
+  assert.deepEqual(plain(parseRows("zip\tcount\tshare\n02134\t1,200\t12%\n10001\t950.5\t8%\n")), [
+    { zip: "02134", count: 1200, share: "12%" },
+    { zip: 10001, count: 950.5, share: "8%" },
+  ]);
+});
+
+test("parseRows: BOM, JSON, explicit format and empty input", () => {
+  assert.deepEqual(plain(parseRows("﻿a\tb\n1\t2\n")), [{ a: 1, b: 2 }]);
+  assert.deepEqual(plain(parseRows('[{"a": 1}]')), [{ a: 1 }]);
+  assert.deepEqual(plain(parseRows('{"values": [1]}')), [1]);
+  assert.deepEqual(plain(parseRows("a;b\n1;2", "csv")), [{ "a;b": "1;2" }]);
+  assert.deepEqual(plain(parseRows("a\tb\n1\t2", "tsv")), [{ a: 1, b: 2 }]);
+  assert.deepEqual(plain(parseRows("   ")), []);
+  assert.deepEqual(plain(parseRows(null)), []);
+  assert.throws(() => parseRows('{"a": 1}'), /array of rows/);
+  assert.throws(() => parseRows("[oops"));
+});
+
+test("parseRows: short, long and blank rows (like csv.DictReader)", () => {
+  assert.deepEqual(plain(parseRows("a,b\n1\n\n2,3,4\n")), [
+    { a: 1, b: null },
+    { a: 2, b: 3 },
+  ]);
+});
+
+test("coerce edge cases", () => {
+  const cases = [
+    ["007", "007"], ["0", 0], ["0.5", 0.5], ["1e3", 1000], ["1_000", "1_000"], ["nan", "nan"],
+    ["12,34", "12,34"], ["-1,234.5", -1234.5], [" 5 ", 5], ["TRUE", true], ["", null], ["  ", null],
+  ];
+  for (const [raw, value] of cases) assert.equal(coerce(raw), value, raw);
 });
 
 test("summarise: long column lists are truncated", () => {
