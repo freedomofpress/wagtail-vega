@@ -17,7 +17,6 @@ def register_admin_urls():
             views.validate_spec,
             name="wagtail_vega_validate_spec",
         ),
-        path("wagtail-vega/voyager/", views.voyager, name="wagtail_vega_voyager"),
         path(
             "wagtail-vega/document-rows/",
             views.document_rows,

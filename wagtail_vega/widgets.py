@@ -5,11 +5,14 @@ from __future__ import annotations
 import json
 
 from django import forms
+from django.templatetags.static import static
 from django.urls import reverse
 from wagtail.admin.telepath import register
 from wagtail.admin.telepath.widgets import WidgetAdapter
 
 from .conf import get_setting
+from .encoders import VegaJSONEncoder
+from .themes import get_themes
 
 CODEMIRROR_JS = "wagtail_vega/admin/vendor/codemirror.js"
 EDITOR_JS = [
@@ -19,8 +22,18 @@ EDITOR_JS = [
     "wagtail_vega/admin/code-editor.js",
 ]
 EDITOR_CSS = "wagtail_vega/admin/code-editor.css"
-VOYAGER_JS = "wagtail_vega/admin/voyager-launcher.js"
-VOYAGER_CSS = "wagtail_vega/admin/voyager-launcher.css"
+BUILDER_JS = ["wagtail_vega/admin/chart-spec.js", "wagtail_vega/admin/chart-builder.js"]
+BUILDER_CSS = "wagtail_vega/admin/chart-builder.css"
+# Loaded by the chart builder the first time it opens, for its preview, so
+# edit pages don't load the Vega libraries until they're needed
+BUILDER_PREVIEW_JS = [
+    "wagtail_vega/vendor/vega.min.js",
+    "wagtail_vega/vendor/vega-lite.min.js",
+    "wagtail_vega/vendor/vega-embed.min.js",
+    "wagtail_vega/vendor/vega-interpreter.js",
+    "wagtail_vega/wagtail-vega.js",
+]
+BUILDER_PREVIEW_CSS = "wagtail_vega/wagtail-vega.css"
 
 
 class CodeEditor(forms.Textarea):
@@ -38,20 +51,20 @@ class CodeEditor(forms.Textarea):
     editor writes every change back to it. It works in StreamField blocks
     (through the telepath adapter below) and in ordinary forms.
 
-    With ``voyager=True`` (``"spec"`` mode only), a "Build chart with
-    Voyager" button goes above the editor. It opens Vega Voyager with the
-    chart's data and writes the chart it builds to the textarea, firing the
-    usual "input" event (see voyager-launcher.js).
+    With ``builder=True`` (``"spec"`` mode only), a "Build chart" button goes
+    above the editor. It opens the chart builder with the chart's data, and
+    writes the chart it builds to the textarea, firing the usual "input"
+    event (see chart-builder.js).
     """
 
     MODES = ("json", "spec", "data")
 
-    def __init__(self, attrs=None, mode="json", voyager=False):
+    def __init__(self, attrs=None, mode="json", builder=False):
         if mode not in self.MODES:
             raise ValueError(f"mode must be one of {self.MODES}")
         self.mode = mode
-        self.voyager = voyager and mode == "spec"
-        if self.voyager:
+        self.builder = builder and mode == "spec"
+        if self.builder:
             self.template_name = "wagtail_vega/widgets/spec_editor.html"
         default_attrs = {"rows": 16, "spellcheck": "false", "autocomplete": "off"}
         super().__init__({**default_attrs, **(attrs or {})})
@@ -67,24 +80,40 @@ class CodeEditor(forms.Textarea):
         # The editor's settings travel with the textarea, so the same markup
         # works whether telepath renders it or it's in the page's HTML.
         context["widget"]["attrs"]["data-wagtail-vega-code-editor"] = json.dumps(self.get_config())
-        if self.voyager:
-            context["voyager"] = self.voyager_config()
+        if self.builder:
+            context["builder"] = json.dumps(self.builder_config(), cls=VegaJSONEncoder)
         return context
 
-    def voyager_config(self) -> dict:
+    def builder_config(self) -> dict:
+        """Settings for the chart builder (chart-builder.js): its endpoints,
+        the data host allowlist, the site's themes for the preview, and the
+        scripts the preview loads when the builder first opens."""
+        themes = {
+            name: {
+                "config": theme.config,
+                "dark": theme.dark,
+                "fallbacks": theme.fallbacks,
+                "vega_theme": theme.vega_theme,
+            }
+            for name, theme in get_themes().items()
+        }
         return {
-            "frame": reverse("wagtail_vega_voyager"),
-            "rows": reverse("wagtail_vega_document_rows"),
-            "validate": reverse("wagtail_vega_validate_spec"),
-            "allowed_hosts": json.dumps(list(get_setting("ALLOWED_DATA_HOSTS"))),
+            "rowsUrl": reverse("wagtail_vega_document_rows"),
+            "validateUrl": reverse("wagtail_vega_validate_spec"),
+            "allowedHosts": list(get_setting("ALLOWED_DATA_HOSTS")),
+            "themes": themes,
+            "defaultTheme": get_setting("DEFAULT_THEME") or None,
+            "embedOptions": get_setting("EMBED_OPTIONS"),
+            "scripts": [static(path) for path in BUILDER_PREVIEW_JS],
+            "stylesheet": static(BUILDER_PREVIEW_CSS),
         }
 
     @property
     def media(self):
         js, css = list(EDITOR_JS), [EDITOR_CSS]
-        if self.voyager:
-            js.append(VOYAGER_JS)
-            css.append(VOYAGER_CSS)
+        if self.builder:
+            js.extend(BUILDER_JS)
+            css.append(BUILDER_CSS)
         return forms.Media(js=js, css={"all": css})
 
 

@@ -79,14 +79,20 @@ export function loadCodeEditor() {
   return { window, registered };
 }
 
-export function loadVoyagerLauncher() {
+/** The chart builder's model (chart-spec.js) and the helpers it needs. */
+export function loadChartSpec() {
+  return loadScript([...ADMIN_HELPERS, "admin/chart-spec.js"], { document: {} });
+}
+
+/** The chart builder: its model and the lightbox's script. */
+export function loadChartBuilder() {
   const defined = {};
-  return loadScript("admin/voyager-launcher.js", {
+  return loadScript([...ADMIN_HELPERS, "admin/chart-spec.js", "admin/chart-builder.js"], {
     customElements: { get: (n) => defined[n], define: (n, c) => { defined[n] = c; } },
     HTMLElement: class {},
     Event: class {},
     URL,
-    document: { baseURI: "https://site.test/admin/pages/1/edit/" },
+    document: { baseURI: "https://site.test/admin/pages/1/edit/", documentElement: { classList: { contains: () => false } } },
     console,
   });
 }

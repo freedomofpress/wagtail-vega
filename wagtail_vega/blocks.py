@@ -67,7 +67,7 @@ class JSONBlock(blocks.FieldBlock):
     """JSON in a code editor, stored as native JSON in the StreamField."""
 
     editor_mode = "json"
-    voyager = False
+    builder = False
 
     def __init__(self, required=True, help_text=None, rows=16, validators=(), **kwargs):
         self.field = PrettyJSONField(
@@ -78,7 +78,7 @@ class JSONBlock(blocks.FieldBlock):
             widget=CodeEditor(
                 mode=self.editor_mode,
                 attrs={"rows": rows, "class": "wagtail-vega-json"},
-                voyager=self.voyager,
+                builder=self.builder,
             ),
         )
         super().__init__(**kwargs)
@@ -107,10 +107,10 @@ class SpecBlock(JSONBlock):
 
     editor_mode = "spec"
 
-    def __init__(self, voyager=True, **kwargs):
-        # A "Build chart with Voyager" button above the editor (see
-        # widgets.CodeEditor); voyager=False leaves it out.
-        self.voyager = voyager
+    def __init__(self, builder=True, **kwargs):
+        # A "Build chart" button above the editor (see widgets.CodeEditor);
+        # builder=False leaves it out.
+        self.builder = builder
         kwargs.setdefault(
             "help_text",
             _(

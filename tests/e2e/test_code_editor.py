@@ -164,9 +164,9 @@ def test_external_input_event_updates_the_editor(editor):
             t.addEventListener("input", () => window.inputEvents++);
         }"""
     )
-    new = json.dumps({**BAR, "title": "From Voyager"}, indent=2)
+    new = json.dumps({**BAR, "title": "From the chart builder"}, indent=2)
     set_externally(spec, new)
-    expect(spec.locator(".cm-content")).to_contain_text('"title": "From Voyager"')
+    expect(spec.locator(".cm-content")).to_contain_text('"title": "From the chart builder"')
     # No feedback loop: only the external event fired, and the value stuck
     assert editor.evaluate("window.inputEvents") == 1
     assert textarea.input_value() == new

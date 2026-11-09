@@ -1,0 +1,390 @@
+/* wagtail-vega admin: the "Build chart" button and the chart builder.
+   Uses Wagtail admin colour tokens, so it follows the light/dark theme. */
+
+.wagtail-vega-spec__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.5rem;
+}
+.wagtail-vega-spec__toolbar .button .icon {
+  width: 1rem;
+  height: 1rem;
+}
+.wagtail-vega-spec__note {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--w-color-text-meta, inherit);
+}
+
+/* The lightbox */
+html.wagtail-vega-builder-open {
+  overflow: hidden;
+}
+.wagtail-vega-builder {
+  box-sizing: border-box;
+  width: calc(100vw - 2rem);
+  max-width: 90rem;
+  height: calc(100vh - 2rem);
+  height: calc(100dvh - 2rem);
+  max-height: none;
+  margin: auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--w-color-text-context, #262626);
+  background: var(--w-color-surface-page, #fff);
+  border: 1px solid var(--w-color-border-furniture, #e0e0e0);
+  border-radius: 0.3125rem;
+  box-shadow: 0 0.5rem 2rem rgb(0 0 0 / 0.3);
+}
+.wagtail-vega-builder:not([open]) {
+  display: none;
+}
+.wagtail-vega-builder::backdrop {
+  background: rgb(0 0 0 / 0.6);
+}
+.wagtail-vega-builder [hidden] {
+  display: none !important;
+}
+
+.wagtail-vega-builder__header,
+.wagtail-vega-builder__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.5rem;
+  padding: 0.75rem 1.25rem;
+}
+.wagtail-vega-builder__header {
+  border-bottom: 1px solid var(--w-color-border-furniture, #e0e0e0);
+}
+.wagtail-vega-builder__footer {
+  justify-content: space-between;
+  border-top: 1px solid var(--w-color-border-furniture, #e0e0e0);
+}
+.wagtail-vega-builder__title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+.wagtail-vega-builder__dataset,
+.wagtail-vega-builder__scheme {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.wagtail-vega-builder label {
+  font-weight: 600;
+  color: var(--w-color-text-label, inherit);
+}
+.wagtail-vega-builder__dataset select,
+.wagtail-vega-builder__scheme select {
+  width: auto;
+  min-width: 9rem;
+  padding-block: 0.375rem;
+}
+.wagtail-vega-builder__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin-inline-start: auto;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 0.3125rem;
+  cursor: pointer;
+}
+.wagtail-vega-builder__close:hover {
+  background: var(--w-color-surface-menus, rgb(0 0 0 / 0.08));
+  color: var(--w-color-text-button, inherit);
+}
+.wagtail-vega-builder__close:focus-visible {
+  outline: 3px solid var(--w-color-focus, #ffbf47);
+}
+.wagtail-vega-builder__close .icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+}
+
+/* Controls on the left, preview on the right; stacked on narrow screens */
+.wagtail-vega-builder__body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(22rem, 30rem) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+.wagtail-vega-builder__controls,
+.wagtail-vega-builder__preview {
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem 1.25rem 1.5rem;
+}
+.wagtail-vega-builder__controls {
+  border-inline-end: 1px solid var(--w-color-border-furniture, #e0e0e0);
+}
+.wagtail-vega-builder__problem {
+  grid-column: 1 / -1;
+  max-width: 42rem;
+  padding: 1.5rem 1.25rem;
+}
+.wagtail-vega-builder__problem p {
+  margin: 0 0 1rem;
+}
+@media (max-width: 50em) {
+  .wagtail-vega-builder {
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+  }
+  .wagtail-vega-builder__body {
+    display: block;
+    overflow: auto;
+  }
+  .wagtail-vega-builder__controls,
+  .wagtail-vega-builder__preview {
+    overflow: visible;
+    padding-inline: 1rem;
+  }
+  .wagtail-vega-builder__controls {
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--w-color-border-furniture, #e0e0e0);
+  }
+  .wagtail-vega-builder__header,
+  .wagtail-vega-builder__footer {
+    padding-inline: 1rem;
+  }
+}
+
+/* Sections of the form */
+.wagtail-vega-builder__section {
+  margin: 0 0 1.25rem;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.wagtail-vega-builder__section > legend,
+.wagtail-vega-builder__section > summary,
+.wagtail-vega-builder__section > h3 {
+  margin: 0 0 0.5rem;
+  padding: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--w-color-text-label, inherit);
+}
+.wagtail-vega-builder__channel {
+  padding-top: 1rem;
+  border-top: 1px solid var(--w-color-border-furniture, #e0e0e0);
+}
+.wagtail-vega-builder__channel > legend {
+  float: left; /* keeps the legend inside the border-top padding */
+  width: 100%;
+}
+.wagtail-vega-builder__channel > legend + * {
+  clear: both;
+}
+.wagtail-vega-builder__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.75rem 1rem;
+}
+.wagtail-vega-builder__control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+.wagtail-vega-builder__control label {
+  font-size: 0.875rem;
+}
+/* Wagtail's fields, a little more compact so a chart's settings fit */
+.wagtail-vega-builder :is(select, input[type="text"], input[type="number"]) {
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  padding: 0.5rem 0.75rem;
+}
+.wagtail-vega-builder select {
+  padding-inline-end: 2.5rem;
+  background-position-x: calc(100% - 1.125rem), calc(100% - 0.75rem);
+  background-position-y: 50%, 50%;
+  text-overflow: ellipsis;
+}
+[dir="rtl"] .wagtail-vega-builder select {
+  padding-inline: 2.5rem 0.75rem;
+  background-position-x: 0.75rem, 1.125rem;
+}
+.wagtail-vega-builder__control :is(select, input) {
+  width: 100%;
+}
+.wagtail-vega-builder__section > .wagtail-vega-builder__control {
+  margin-bottom: 0.75rem;
+}
+.wagtail-vega-builder__check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.wagtail-vega-builder__check label {
+  font-weight: 400;
+}
+.wagtail-vega-builder__hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.875rem;
+  color: var(--w-color-text-meta, inherit);
+}
+.wagtail-vega-builder__swap {
+  margin: -0.5rem 0 0.75rem;
+}
+
+.wagtail-vega-builder__suggestions summary {
+  display: list-item;
+  list-style: disclosure-closed inside;
+  cursor: pointer;
+}
+.wagtail-vega-builder__suggestions[open] summary {
+  list-style-type: disclosure-open;
+}
+.wagtail-vega-builder__suggestions summary:focus-visible {
+  outline: 3px solid var(--w-color-focus, #ffbf47);
+  outline-offset: 2px;
+}
+.wagtail-vega-builder__suggestions ul {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.wagtail-vega-builder__suggestions .button {
+  height: auto;
+  min-height: 2.25rem;
+  padding-block: 0.375rem;
+  line-height: 1.3;
+  white-space: normal;
+  text-align: start;
+}
+
+.wagtail-vega-builder__kept {
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  background: var(--w-color-surface-field-inactive, rgb(0 0 0 / 0.04));
+  border-radius: 0.3125rem;
+}
+.wagtail-vega-builder__kept p {
+  margin: 0 0 0.25rem;
+}
+.wagtail-vega-builder__kept ul {
+  margin: 0 0 0.5rem;
+  padding-inline-start: 1.25rem;
+}
+
+/* Preview */
+.wagtail-vega-builder__preview-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.75rem;
+}
+.wagtail-vega-builder__preview h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+.wagtail-vega-builder__chart {
+  min-height: 12rem;
+  padding: 1rem;
+  overflow-x: auto;
+  color: #262626;
+  background: #fff;
+  border: 1px solid var(--w-color-border-furniture, #e0e0e0);
+  border-radius: 0.3125rem;
+}
+.wagtail-vega-builder__chart[data-color-scheme="dark"] {
+  color: #f6f6f8;
+  background: #1e1e1e;
+}
+.wagtail-vega-builder__chart svg {
+  max-width: 100%;
+  height: auto;
+}
+.wagtail-vega-builder__warnings {
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.875rem;
+  color: var(--w-color-text-meta, inherit);
+}
+.wagtail-vega-builder__json {
+  margin-top: 1rem;
+}
+.wagtail-vega-builder__json summary {
+  display: list-item;
+  list-style: disclosure-closed inside;
+  cursor: pointer;
+  font-weight: 600;
+}
+.wagtail-vega-builder__json[open] summary {
+  list-style-type: disclosure-open;
+}
+.wagtail-vega-builder summary:focus-visible {
+  outline: 3px solid var(--w-color-focus, #ffbf47);
+  outline-offset: 2px;
+}
+.wagtail-vega-builder__json pre {
+  max-height: 24rem;
+  overflow: auto;
+  margin: 0.5rem 0 0;
+  padding: 0.75rem;
+  font-size: 0.8125rem;
+  background: var(--w-color-surface-field, transparent);
+  border: 1px solid var(--w-color-border-furniture, #e0e0e0);
+  border-radius: 0.3125rem;
+}
+
+/* Footer messages and actions */
+.wagtail-vega-builder__messages {
+  flex: 1 1 20rem;
+  min-width: 0;
+}
+.wagtail-vega-builder__status,
+.wagtail-vega-builder__errors {
+  margin: 0;
+  font-size: 0.875rem;
+}
+.wagtail-vega-builder__status {
+  color: var(--w-color-text-meta, inherit);
+}
+.wagtail-vega-builder__errors {
+  padding: 0;
+  list-style: none;
+  color: var(--w-color-text-error, #cd4444);
+}
+.wagtail-vega-builder__errors:empty {
+  display: none;
+}
+.wagtail-vega-builder__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+.wagtail-vega-builder__confirm {
+  margin-inline-start: auto;
+}
+.wagtail-vega-builder__confirm p {
+  margin: 0;
+  font-weight: 600;
+}

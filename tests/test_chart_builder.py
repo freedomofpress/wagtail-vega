@@ -1,29 +1,28 @@
-"""The admin endpoints and widget behind "Build chart with Voyager".
+"""The server side of the chart builder: its button on the spec editor, the
+document-rows endpoint it reads documents with, and that the specs it writes
+pass validation.
 
 The spec validation endpoint it also uses is tested in test_editor.py.
 """
 
+import html
 import json
 from pathlib import Path
 
 import pytest
 from django.contrib.auth.models import Group, Permission
 from django.core.files.base import ContentFile
-from django.urls import reverse
+from django.urls import NoReverseMatch, reverse
 from wagtail.documents import get_document_model
 
 from wagtail_vega.blocks import SpecBlock
 from wagtail_vega.validation import spec_problems
-from wagtail_vega.views import frame_csp
 from wagtail_vega.widgets import CodeEditor
-
-from .conftest import VL
 
 pytestmark = pytest.mark.django_db
 
 Document = get_document_model()
 
-FRAME = reverse("wagtail_vega_voyager")
 ROWS = reverse("wagtail_vega_document_rows")
 VALIDATE = reverse("wagtail_vega_validate_spec")
 
@@ -67,56 +66,18 @@ def editor_client(client, django_user_model):
     return client
 
 
-# -- Access ------------------------------------------------------------------
+# -- Document rows ---------------------------------------------------------------
 
 
-@pytest.mark.parametrize("url", [FRAME, ROWS])
-def test_anonymous_users_are_sent_to_login(client, url):
-    response = client.get(url)
+def test_anonymous_users_are_sent_to_login(client):
+    response = client.get(ROWS)
     assert response.status_code == 302
     assert reverse("wagtailadmin_login") in response["Location"]
 
 
-@pytest.mark.parametrize("url", [FRAME, ROWS])
-def test_users_without_admin_access_are_refused(no_admin_client, url):
-    response = no_admin_client.get(url)
+def test_users_without_admin_access_are_refused(no_admin_client):
+    response = no_admin_client.get(ROWS)
     assert response.status_code in (302, 403)
-    assert response.status_code != 200
-
-
-# -- The Voyager page ----------------------------------------------------------
-
-
-def test_voyager_page(admin_client):
-    response = admin_client.get(FRAME)
-    assert response.status_code == 200
-    # Sandboxed even if opened outside the lightbox's iframe, and cut off
-    # from the network: the admin page passes the data in
-    csp = [d.strip() for d in response["Content-Security-Policy"].split(";")]
-    assert csp[0] == "sandbox allow-scripts"
-    assert "default-src 'none'" in csp
-    assert "connect-src 'none'" in csp
-    assert "form-action 'none'" in csp
-    assert "base-uri 'none'" in csp
-    assert "script-src 'self' 'unsafe-eval'" in csp
-    assert response["X-Frame-Options"] == "SAMEORIGIN"
-    html = response.content.decode()
-    assert "wagtail_vega/vendor/voyager/voyager.js" in html
-    assert "wagtail_vega/vendor/voyager/voyager.css" in html
-    assert "wagtail_vega/admin/voyager-frame.js" in html
-    # Isolated from the admin's own scripts and styles
-    assert "wagtailadmin" not in html
-
-
-def test_voyager_page_is_get_only(admin_client):
-    assert admin_client.post(FRAME).status_code == 405
-
-
-def test_voyager_page_for_editors(editor_client):
-    assert editor_client.get(FRAME).status_code == 200
-
-
-# -- Document rows ---------------------------------------------------------------
 
 
 def test_document_rows(admin_client, doc):
@@ -185,23 +146,67 @@ def test_document_rows_is_get_only(admin_client, doc):
     assert admin_client.post(ROWS, {"id": doc.pk}).status_code == 405
 
 
-# -- The widget ----------------------------------------------------------------------
+def test_voyager_is_gone():
+    """Voyager's page and files were removed with the builder that replaced it."""
+    with pytest.raises(NoReverseMatch):
+        reverse("wagtail_vega_voyager")
+    static = Path(__file__).parent.parent / "wagtail_vega" / "static" / "wagtail_vega"
+    assert not (static / "vendor" / "voyager").exists()
+    assert not list(static.rglob("voyager*"))
+
+
+# -- The button ----------------------------------------------------------------------
 
 
 def render_spec_field(block):
     return block.field.widget.render("spec", "{}", {"id": "spec"})
 
 
-def test_spec_widget_has_voyager_button(vega_settings):
+def builder_config(markup):
+    start = markup.index('data-config="') + len('data-config="')
+    return json.loads(html.unescape(markup[start : markup.index('"', start)]))
+
+
+def test_spec_widget_has_builder_button(vega_settings):
     vega_settings["ALLOWED_DATA_HOSTS"] = ["data.example.org"]
-    html = render_spec_field(SpecBlock())
-    assert "<wagtail-vega-voyager" in html
-    assert f'data-frame-url="{FRAME}"' in html
-    assert f'data-rows-url="{ROWS}"' in html
-    assert f'data-validate-url="{VALIDATE}"' in html
-    assert 'data-allowed-hosts="[&quot;data.example.org&quot;]"' in html
-    assert 'name="spec"' in html and "<textarea" in html
-    assert "Build chart with Voyager" in html
+    markup = render_spec_field(SpecBlock())
+    assert "<wagtail-vega-chart-builder" in markup
+    assert 'data-for="spec"' in markup
+    assert "Build chart" in markup
+    config = builder_config(markup)
+    assert config["rowsUrl"] == ROWS
+    assert config["validateUrl"] == VALIDATE
+    assert config["allowedHosts"] == ["data.example.org"]
+    # The preview's libraries load when the builder first opens
+    assert config["scripts"] == [
+        "/static/wagtail_vega/vendor/vega.min.js",
+        "/static/wagtail_vega/vendor/vega-lite.min.js",
+        "/static/wagtail_vega/vendor/vega-embed.min.js",
+        "/static/wagtail_vega/vendor/vega-interpreter.js",
+        "/static/wagtail_vega/wagtail-vega.js",
+    ]
+    assert config["stylesheet"] == "/static/wagtail_vega/wagtail-vega.css"
+    assert config["embedOptions"] == {"actions": False, "renderer": "svg"}
+
+
+def test_builder_config_has_the_themes():
+    """The preview uses the chart's theme, as the page will. (The test
+    project's themes, from tests/settings.py.)"""
+    config = builder_config(render_spec_field(SpecBlock()))
+    assert config["defaultTheme"] == "house"
+    house = config["themes"]["house"]
+    assert house["config"]["font"] == "Georgia, serif"
+    assert house["dark"]["title"] == {"color": "#fff"}
+    assert house["fallbacks"] == {"--brand": "#c0392b"}
+    assert config["themes"]["538"]["vega_theme"] == "fivethirtyeight"
+
+
+def test_builder_config_without_themes(vega_settings):
+    vega_settings["THEMES"] = {}
+    vega_settings["DEFAULT_THEME"] = None
+    config = builder_config(render_spec_field(SpecBlock()))
+    assert config["themes"] == {}
+    assert config["defaultTheme"] is None
 
 
 def test_spec_widget_is_the_code_editor():
@@ -210,40 +215,43 @@ def test_spec_widget_is_the_code_editor():
     aria-describedby and required, which the code editor copies; the button
     moves itself above it in the browser."""
     widget = SpecBlock().field.widget
-    assert isinstance(widget, CodeEditor) and widget.mode == "spec" and widget.voyager
-    html = render_spec_field(SpecBlock()).strip()
-    assert html.startswith("<textarea")
-    assert "data-wagtail-vega-code-editor=" in html
-    assert html.index("</textarea>") < html.index("<wagtail-vega-voyager")
-    assert 'data-for="spec"' in html
+    assert isinstance(widget, CodeEditor) and widget.mode == "spec" and widget.builder
+    markup = render_spec_field(SpecBlock()).strip()
+    assert markup.startswith("<textarea")
+    assert "data-wagtail-vega-code-editor=" in markup
+    assert markup.index("</textarea>") < markup.index("<wagtail-vega-chart-builder")
 
 
-def test_spec_widget_without_voyager():
-    widget = SpecBlock(voyager=False).field.widget
-    assert isinstance(widget, CodeEditor) and not widget.voyager
-    html = render_spec_field(SpecBlock(voyager=False))
-    assert "wagtail-vega-voyager" not in html
-    assert "data-wagtail-vega-code-editor=" in html
-    assert "voyager-launcher" not in str(widget.media)
+def test_spec_widget_without_builder():
+    widget = SpecBlock(builder=False).field.widget
+    assert isinstance(widget, CodeEditor) and not widget.builder
+    markup = render_spec_field(SpecBlock(builder=False))
+    assert "wagtail-vega-chart-builder" not in markup
+    assert "data-wagtail-vega-code-editor=" in markup
+    assert "chart-builder" not in str(widget.media)
 
 
-def test_voyager_needs_spec_mode():
-    assert not CodeEditor(mode="json", voyager=True).voyager
-    assert "wagtail-vega-voyager" not in CodeEditor(mode="json", voyager=True).render("x", "{}")
+def test_builder_needs_spec_mode():
+    assert not CodeEditor(mode="json", builder=True).builder
+    assert "wagtail-vega-chart-builder" not in CodeEditor(mode="json", builder=True).render(
+        "x", "{}"
+    )
 
 
 def test_spec_widget_media():
     media = str(SpecBlock().field.widget.media)
-    assert "wagtail_vega/admin/voyager-launcher.js" in media
-    assert "wagtail_vega/admin/voyager-launcher.css" in media
-    # The launcher reads pasted data with data-format.js, part of the editor
-    assert "wagtail_vega/admin/data-format.js" in media
-    assert media.index("data-format.js") < media.index("voyager-launcher.js")
-    # Voyager's own assets load only inside its iframe
-    assert "vendor/voyager" not in media
+    assert "wagtail_vega/admin/chart-spec.js" in media
+    assert "wagtail_vega/admin/chart-builder.js" in media
+    assert "wagtail_vega/admin/chart-builder.css" in media
+    # The builder reads pasted data and infers types with data-format.js,
+    # part of the editor
+    assert media.index("data-format.js") < media.index("chart-spec.js")
+    assert media.index("chart-spec.js") < media.index("chart-builder.js")
+    # The Vega libraries aren't loaded with the edit page
+    assert "vega.min.js" not in media
 
 
-def test_edit_page_includes_launcher(admin_client):
+def test_edit_page_includes_the_builder(admin_client):
     from wagtail.models import Site
 
     from tests.testapp.models import ChartPage
@@ -251,29 +259,26 @@ def test_edit_page_includes_launcher(admin_client):
     home = Site.objects.get(is_default_site=True).root_page
     page = home.add_child(instance=ChartPage(title="c", slug="c", body=[]))
     response = admin_client.get(reverse("wagtailadmin_pages:edit", args=(page.pk,)))
-    html = response.content.decode()
-    assert "wagtail_vega/admin/voyager-launcher.js" in html
-    assert "wagtail-vega-voyager" in html
+    markup = response.content.decode()
+    assert "wagtail_vega/admin/chart-builder.js" in markup
+    assert "wagtail-vega-chart-builder" in markup
+    assert "vendor/voyager" not in markup
 
 
-# -- Spec conversion fixtures ------------------------------------------------------
+# -- The specs it writes ----------------------------------------------------------------
 
-FIXTURES = json.loads((Path(__file__).parent / "js/fixtures/voyager-specs.json").read_text())
+FIXTURES = json.loads((Path(__file__).parent / "js/fixtures/chart-specs.json").read_text())
+SPECS = [(f["name"], f["expected"]) for f in FIXTURES["charts"]] + [
+    (f["name"], f["spec"]) for f in FIXTURES["roundTrip"]
+]
 
 
-@pytest.mark.parametrize("fixture", FIXTURES, ids=[f["name"] for f in FIXTURES])
-def test_converted_specs_are_valid_v6(fixture, vega_settings):
-    """tests/js/voyager-launcher.test.mjs checks that fromVoyagerSpec turns each
-    Voyager spec into "expected"; here every "expected" spec must pass the
-    checks that saving the page runs."""
-    spec = fixture["expected"]
-    assert spec["$schema"] == VL
-    assert spec["data"] == {"name": fixture["dataset"]}
+@pytest.mark.parametrize("spec", [s for _, s in SPECS], ids=[n for n, _ in SPECS])
+def test_builder_specs_are_valid(spec, vega_settings):
+    """tests/js/chart-spec.test.mjs checks that the builder writes each of
+    these specs (and opens and writes back the round-trip ones unchanged);
+    here each must pass the checks that saving the page runs, the Vega-Lite
+    schema included."""
+    assert spec["data"] == {"name": "source"}
+    assert "datasets" not in spec
     assert spec_problems(spec) == []
-
-
-def test_frame_csp_allows_static_files_on_another_origin(settings):
-    settings.STATIC_URL = "https://cdn.example.org/static/"
-    csp = frame_csp()
-    assert "script-src https://cdn.example.org 'unsafe-eval'" in csp
-    assert "connect-src 'none'" in csp
