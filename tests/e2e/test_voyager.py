@@ -111,6 +111,14 @@ def test_build_chart_and_use_it(editor, chart_page, console_errors):
     fill_editor(spec_field(editor), "")
     expect(textarea).to_have_value("")
     count_input_events(editor)
+    # Record the specs Voyager reports, as the launcher receives them
+    editor.evaluate(
+        """() => window.addEventListener("message", (e) => {
+            if (e.data?.channel === "wagtail-vega-voyager" && e.data.type === "spec") {
+                window.__voyagerSpec = e.data.spec;
+            }
+        })"""
+    )
     dialog, frame = open_voyager(editor)
     wait_for_fields(frame, "quarter", "requests")
     use = dialog.get_by_role("button", name="Use this chart")
@@ -125,6 +133,15 @@ def test_build_chart_and_use_it(editor, chart_page, console_errors):
     for name in ("quarter", "requests"):
         frame.locator(".field-list__field-list-item").get_by_text(name, exact=True).dblclick()
         expect(shelves.get_by_text(name, exact=True)).to_be_visible(timeout=VOYAGER_TIMEOUT)
+    # Voyager reports its spec to the launcher shortly after each change
+    # (debounced), so wait until the launcher has the two-field chart.
+    editor.wait_for_function(
+        """() => {
+            const fields = Object.values(window.__voyagerSpec?.encoding || {}).map((d) => d.field);
+            return fields.includes("quarter") && fields.includes("requests");
+        }""",
+        timeout=VOYAGER_TIMEOUT,
+    )
     expect(use).to_be_enabled(timeout=VOYAGER_TIMEOUT)
     use.click()
 
