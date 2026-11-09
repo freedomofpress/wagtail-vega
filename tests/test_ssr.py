@@ -21,7 +21,7 @@ def test_render_svg_with_css_var_fallbacks(vega_settings, vl_bar):
     value = block.to_python(
         {
             "spec": vl_bar,
-            "data": [{"name": "source", "source": [{"type": "csv", "value": "a,b\nx,1"}]}],
+            "data": [{"name": "source", "source_type": "paste", "paste": "a,b\nx,1"}],
         }
     )
     html = block.render(value)

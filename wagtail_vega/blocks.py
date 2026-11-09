@@ -1,7 +1,7 @@
 """StreamField blocks for Vega / Vega-Lite charts.
 
 ``ChartBlock`` is the editor-facing block: editors paste a spec and attach
-named datasets (CSV, JSON, a document, or an allowlisted URL).
+named datasets (pasted CSV/TSV/JSON, a document, or an allowlisted URL).
 
 ``BaseChartBlock`` is the extension point for developers. Subclass it and
 override ``get_datasets()`` to supply data from anywhere, e.g. the database::
@@ -15,6 +15,7 @@ The spec refers to datasets by name: ``{"data": {"name": "source"}}``.
 
 from __future__ import annotations
 
+import collections
 import json
 import secrets
 from dataclasses import dataclass, field
@@ -25,15 +26,17 @@ from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
 from django.forms.fields import InvalidJSONInput
 from django.forms.utils import ErrorList
+from django.utils.functional import cached_property
 from django.utils.html import json_script
 from django.utils.translation import gettext_lazy as _
 from wagtail import blocks
-from wagtail.blocks.struct_block import StructBlockValidationError
+from wagtail.admin.telepath import register
+from wagtail.blocks.struct_block import StructBlockAdapter, StructBlockValidationError
 from wagtail.documents.blocks import DocumentChooserBlock
 
 from . import ssr
 from .conf import get_setting
-from .data import DOCUMENT_SUFFIXES, document_rows, parse_delimited, parse_json
+from .data import DOCUMENT_SUFFIXES, document_rows, parse_text
 from .encoders import VegaJSONEncoder
 from .spec import (
     SpecError,
@@ -134,40 +137,8 @@ class SpecBlock(JSONBlock):
 # Data sources
 # --------------------------------------------------------------------------
 
-
-class CSVDataBlock(blocks.TextBlock):
-    def __init__(self, delimiter=",", **kwargs):
-        self.delimiter = delimiter
-        kwargs.setdefault("rows", 8)
-        super().__init__(**kwargs)
-
-    def clean(self, value):
-        value = super().clean(value)
-        if value and not parse_delimited(value, self.delimiter):
-            raise ValidationError(_("Enter a header row followed by data rows."))
-        return value
-
-    def get_dataset(self, value):
-        return parse_delimited(value or "", self.delimiter)
-
-    class Meta:
-        icon = "table"
-        label = _("CSV")
-        help_text = _("Comma-separated values with a header row.")
-
-
-class JSONDataBlock(JSONBlock):
-    def clean(self, value):
-        value = super().clean(value)
-        parse_json(value or [])
-        return value
-
-    def get_dataset(self, value):
-        return parse_json(value or [])
-
-    class Meta:
-        icon = "code"
-        label = _("JSON")
+PASTE, DOCUMENT, URL = "paste", "document", "url"
+SOURCE_FIELDS = {PASTE: ("paste",), DOCUMENT: ("document",), URL: ("url", "format")}
 
 
 class DocumentDataBlock(DocumentChooserBlock):
@@ -177,55 +148,11 @@ class DocumentDataBlock(DocumentChooserBlock):
             raise ValidationError(_("Choose a .csv, .tsv or .json document."))
         return value
 
-    def get_dataset(self, value):
-        return document_rows(value) if value else []
-
-    class Meta:
-        icon = "doc-full"
-        label = _("Document")
-
-
-class URLDataBlock(blocks.StructBlock):
-    url = blocks.URLBlock()
-    format = blocks.ChoiceBlock(
-        choices=[("csv", "CSV"), ("tsv", "TSV"), ("json", "JSON")],
-        required=False,
-        help_text=_("Leave blank to infer from the URL."),
-    )
-
-    def clean(self, value):
-        value = super().clean(value)
-        if value["url"] and not host_allowed(value["url"], get_setting("ALLOWED_DATA_HOSTS")):
-            raise StructBlockValidationError(
-                block_errors={"url": ValidationError(_("Data can't be loaded from this host."))}
-            )
-        return value
-
-    def get_dataset(self, value):
-        return remote_data(value["url"], value["format"] or None)
-
-    class Meta:
-        icon = "link"
-        label = _("URL")
-
-
-class DataSourceBlock(blocks.StreamBlock):
-    csv = CSVDataBlock()
-    json = JSONDataBlock(rows=8)
-    document = DocumentDataBlock()
-    url = URLDataBlock()
-
-    def get_dataset(self, value):
-        for child in value:
-            return child.block.get_dataset(child.value)
-        return []
-
-    class Meta:
-        min_num = 1
-        max_num = 1
-
 
 class DatasetBlock(blocks.StructBlock):
+    """A named dataset. Editors pick where the data comes from with a
+    Paste / Document / URL toggle; only the matching inputs are shown."""
+
     name = blocks.CharBlock(
         default="source",
         max_length=64,
@@ -237,14 +164,93 @@ class DatasetBlock(blocks.StructBlock):
         ],
         help_text=_('The name the spec uses to refer to this data, e.g. "source".'),
     )
-    source = DataSourceBlock()
-
-    def get_dataset(self, value):
-        return self.child_blocks["source"].get_dataset(value["source"])
+    source_type = blocks.ChoiceBlock(
+        choices=[(PASTE, _("Paste")), (DOCUMENT, _("Document")), (URL, _("URL"))],
+        default=PASTE,
+        widget=forms.RadioSelect,
+        label=_("Source"),
+    )
+    paste = blocks.TextBlock(
+        required=False,
+        rows=8,
+        label=_("Data"),
+        help_text=_(
+            "Paste CSV, JSON, or cells copied from a spreadsheet. "
+            "The first row must be the column names."
+        ),
+        form_classname="wagtail-vega-paste",
+    )
+    document = DocumentDataBlock(
+        required=False, help_text=_("A .csv, .tsv or .json file with a header row.")
+    )
+    url = blocks.URLBlock(required=False, label=_("URL"))
+    format = blocks.ChoiceBlock(
+        choices=[
+            ("", _("Detect from the URL")),
+            ("csv", "CSV"),
+            ("tsv", "TSV"),
+            ("json", "JSON"),
+        ],
+        required=False,
+    )
 
     class Meta:
         icon = "table"
         label = _("Dataset")
+        form_classname = "wagtail-vega-dataset"
+
+    def clean(self, value):
+        value = super().clean(value)
+        source = value["source_type"] or PASTE
+        errors = {}
+        if source == PASTE:
+            try:
+                if not parse_text(value["paste"]):
+                    errors["paste"] = ValidationError(
+                        _("Paste a header row followed by data rows.")
+                    )
+            except (ValidationError, json.JSONDecodeError) as e:
+                errors["paste"] = ValidationError(_("Couldn't read this data: %s") % e)
+        elif source == DOCUMENT:
+            if not value["document"]:
+                errors["document"] = ValidationError(_("Choose a document."))
+        elif source == URL:
+            if not value["url"]:
+                errors["url"] = ValidationError(_("Enter a URL."))
+            elif not host_allowed(value["url"], get_setting("ALLOWED_DATA_HOSTS")):
+                errors["url"] = ValidationError(_("Data can't be loaded from this host."))
+        if errors:
+            raise StructBlockValidationError(block_errors=errors)
+
+        # Drop inputs for the other source types so stale data isn't kept
+        for other, names in SOURCE_FIELDS.items():
+            if other != source:
+                for name in names:
+                    value[name] = self.child_blocks[name].get_default()
+        return value
+
+    def get_dataset(self, value):
+        source = value["source_type"] or PASTE
+        if source == DOCUMENT:
+            return document_rows(value["document"]) if value["document"] else []
+        if source == URL:
+            return remote_data(value["url"], value["format"] or None)
+        return parse_text(value["paste"])
+
+
+class DatasetBlockAdapter(StructBlockAdapter):
+    js_constructor = "wagtail_vega.blocks.DatasetBlock"
+
+    @cached_property
+    def media(self):
+        media = super().media
+        return forms.Media(
+            js=[*media._js, "wagtail_vega/admin/dataset-block.js"],
+            css={"all": ["wagtail_vega/admin/dataset-block.css"]},
+        )
+
+
+register(DatasetBlockAdapter(), DatasetBlock)
 
 
 # --------------------------------------------------------------------------
@@ -316,7 +322,12 @@ class BaseChartBlock(blocks.StructBlock):
     - ``ssr``: render an SVG on the server (defaults to the SSR setting)
     - ``fallback_table``: render a data table (defaults to FALLBACK_TABLE)
     - ``embed_options``: extra vega-embed options
+
+    Set ``field_order`` to a tuple of child block names to control the order
+    of fields in the editor (unlisted fields follow in declaration order).
     """
+
+    field_order: tuple[str, ...] = ()
 
     spec = SpecBlock()
     description = blocks.TextBlock(
@@ -334,6 +345,16 @@ class BaseChartBlock(blocks.StructBlock):
         ssr = None
         fallback_table = None
         embed_options = None
+
+    def __init__(self, *args, **kwargs):
+        if self.field_order:
+            # StructBlock.__init__ copies base_blocks, so an instance attribute
+            # set here decides the order on all supported Wagtail versions.
+            declared = type(self).base_blocks
+            names = [n for n in self.field_order if n in declared]
+            names += [n for n in declared if n not in names]
+            self.base_blocks = collections.OrderedDict((n, declared[n]) for n in names)
+        super().__init__(*args, **kwargs)
 
     # -- hooks --------------------------------------------------------------
 
@@ -424,16 +445,14 @@ class BaseChartBlock(blocks.StructBlock):
 class ChartBlock(BaseChartBlock):
     """The editor-facing chart block: a spec plus named datasets."""
 
+    field_order = ("data", "spec", "description", "caption", "theme")
+
     data = blocks.ListBlock(
         DatasetBlock(),
         min_num=0,
         help_text=_("Datasets the spec can refer to by name."),
     )
-    theme = blocks.ChoiceBlock(
-        choices=theme_choices,
-        required=False,
-        help_text=_("Leave blank to use the site's default theme."),
-    )
+    theme = blocks.ChoiceBlock(choices=theme_choices, required=False)
 
     def get_datasets(self, value, context=None):
         dataset_block = self.child_blocks["data"].child_block

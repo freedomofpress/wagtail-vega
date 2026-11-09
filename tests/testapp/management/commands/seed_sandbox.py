@@ -1,6 +1,7 @@
 """Create a demo page with example charts: python manage.py seed_sandbox"""
 
 import datetime
+import json
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -25,13 +26,14 @@ BAR = {
         "xOffset": {"field": "agency"},
     },
 }
-CSV = """quarter,agency,requests
-Q1,FBI,120
-Q1,DHS,80
-Q2,FBI,140
-Q2,DHS,95
-Q3,FBI,110
-Q3,DHS,130
+# Tab-separated, as copied from a spreadsheet
+CSV = """quarter\tagency\trequests
+Q1\tFBI\t1,120
+Q1\tDHS\t980
+Q2\tFBI\t1,340
+Q2\tDHS\t1,095
+Q3\tFBI\t1,110
+Q3\tDHS\t1,230
 """
 
 VEGA_SPEC = {
@@ -136,7 +138,7 @@ class Command(BaseCommand):
                     {
                         "spec": BAR,
                         "theme": "",
-                        "data": [{"name": "source", "source": [("csv", CSV)]}],
+                        "data": [{"name": "source", "source_type": "paste", "paste": CSV}],
                         "description": "Grouped bar chart of records requests per quarter.",
                         "caption": "Source: example data",
                     },
@@ -149,19 +151,18 @@ class Command(BaseCommand):
                         "data": [
                             {
                                 "name": "source",
-                                "source": [
-                                    (
-                                        "json",
-                                        [
-                                            {"category": c, "amount": a}
-                                            for c, a in zip(
-                                                "ABCDEFGH",
-                                                [28, 55, 43, 91, 81, 53, 19, 87],
-                                                strict=True,
-                                            )
-                                        ],
-                                    )
-                                ],
+                                "source_type": "paste",
+                                "paste": json.dumps(
+                                    [
+                                        {"category": c, "amount": a}
+                                        for c, a in zip(
+                                            "ABCDEFGH",
+                                            [28, 55, 43, 91, 81, 53, 19, 87],
+                                            strict=True,
+                                        )
+                                    ],
+                                    indent=2,
+                                ),
                             }
                         ],
                         "description": "A Vega bar chart with a threshold slider.",
@@ -184,15 +185,9 @@ class Command(BaseCommand):
                         "data": [
                             {
                                 "name": "weather",
-                                "source": [
-                                    (
-                                        "url",
-                                        {
-                                            "url": "https://vega.github.io/vega-datasets/data/seattle-weather.csv",
-                                            "format": "csv",
-                                        },
-                                    )
-                                ],
+                                "source_type": "url",
+                                "url": "https://vega.github.io/vega-datasets/data/seattle-weather.csv",
+                                "format": "csv",
                             }
                         ],
                         "description": "Count of weather types by month in Seattle.",

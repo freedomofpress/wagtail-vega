@@ -2,7 +2,7 @@
 
 [Vega](https://vega.github.io/vega/) and [Vega-Lite](https://vega.github.io/vega-lite/) chart blocks for Wagtail StreamFields.
 
-- **Editors** paste a Vega or Vega-Lite spec and attach data (CSV, JSON, a document, or a URL). They can create new kinds of chart without changing any code.
+- **Editors** paste a Vega or Vega-Lite spec and attach data: pasted CSV, JSON or spreadsheet cells, a document, or a URL. They can create new kinds of chart without changing any code.
 - **Developers** subclass the block to supply data from anywhere, e.g. the database.
 - **Themes** are Vega `config` objects. They can have dark-mode variants and can pull colours from your site's CSS custom properties.
 - **Privacy and security:** the Vega libraries are vendored, so there are no CDN requests. Data hosts are allowlisted, and a CSP-safe mode works without `unsafe-eval`, inline scripts or inline styles.
@@ -51,7 +51,17 @@ Specs refer to data **by name**, and the editor attaches a dataset with the same
 - **Vega:** the matching entry in the `data` array gets the `values` or `url`; its `transform`s are kept.
 - Inline `values` in a spec still work for quick one-off charts.
 - Specs are checked against the bundled JSON schemas when the page is saved. Errors point at the problem, e.g. `encoding.x.type: 'nominl' is not valid…`.
-- **CSV values are typed:** numbers, booleans and blank cells are converted (blanks become `null`). Dates stay as strings. Watch for time zones: Vega parses `2026-01-01` as UTC midnight, so use `utcyearmonth` etc. in `timeUnit`, or the axis may show the previous month.
+## Adding data
+
+Each dataset has a **Paste / Document / URL** toggle, and only the inputs for the selected source are shown.
+
+- **Paste** accepts CSV, JSON, or cells copied straight from Excel, Google Sheets or Numbers (which copy as tab-separated text). The format is detected automatically: tab, comma or semicolon, whichever is most common in the header row. A live summary under the box shows what was read, e.g. `Tab-separated · 6 rows · quarter (text), requests (number)`, and warns about ragged rows or invalid JSON.
+- **Document** takes a `.csv`, `.tsv` or `.json` file from the Wagtail document library.
+- **URL** points at a file on an allowed host. It is fetched by the browser, or by the server when SSR is on.
+
+**Value types:** numbers (including `1,234`), `true`/`false` and blank cells (as `null`) are converted. Values with leading zeros, like ZIP codes, stay as text, and so do dates.
+
+- **Time zones:** Vega parses `2026-01-01` as UTC midnight. Use `utcyearmonth` etc. in `timeUnit`, or the axis may show the previous month.
 
 ## Custom data sources
 
@@ -78,7 +88,7 @@ These hooks are also available:
 | `get_spec(value, context, datasets, theme, dark)` | The final spec. |
 | `build_chart(value, context)` | The `Chart` object passed to the template. |
 
-`Meta` options: `theme`, `ssr`, `fallback_table`, `embed_options`, plus the usual `template`, `icon` and `label`. `ChartBlock` subclasses `BaseChartBlock` and adds the `data` and `theme` fields.
+`Meta` options: `theme`, `ssr`, `fallback_table`, `embed_options`, plus the usual `template`, `icon` and `label`. Set the `field_order` class attribute (a tuple of field names) to change the order of fields in the editor. `ChartBlock` subclasses `BaseChartBlock` and adds the `data` and `theme` fields, with data shown first.
 
 ## Themes
 
@@ -139,6 +149,7 @@ python -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/python manage.py migrate && .venv/bin/python manage.py seed_sandbox
 .venv/bin/python manage.py runserver          # http://localhost:8000, admin/admin
 WAGTAIL_VEGA_CSP_SAFE=1 WAGTAIL_VEGA_SSR=1 .venv/bin/python manage.py runserver  # strict CSP + SSR
+WAGTAIL_VEGA_SANDBOX_AUTOLOGIN=1 .venv/bin/python manage.py runserver  # skip login (for headless screenshots)
 ```
 
 To update the vendored JS and schemas, edit the versions in `scripts/vendor.py` and run it. Each tarball is checked against npm's integrity hash.

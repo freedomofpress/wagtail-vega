@@ -1,15 +1,23 @@
-"""Turn editor-supplied data (CSV, JSON, documents) into lists of rows."""
+"""Turn editor-supplied data (pasted text, documents) into lists of rows."""
 
 from __future__ import annotations
 
 import csv
 import io
 import json
+import re
 from pathlib import PurePath
 from typing import Any
 
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
+
+# Keep these in sync with static/wagtail_vega/admin/dataset-block.js
+NUMBER_RE = re.compile(r"^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$")
+# "1,234" / "1,234,567.89", as copied from a formatted spreadsheet
+THOUSANDS_RE = re.compile(r"^[-+]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$")
+# "02134", "007": zip codes and IDs, which must stay text
+LEADING_ZERO_RE = re.compile(r"^[-+]?0\d")
 
 
 def _coerce(value: str) -> Any:
@@ -25,16 +33,18 @@ def _coerce(value: str) -> Any:
     lowered = stripped.lower()
     if lowered in ("true", "false"):
         return lowered == "true"
-    try:
-        return int(stripped)
-    except ValueError:
-        pass
-    try:
-        number = float(stripped)
-    except ValueError:
+    if LEADING_ZERO_RE.match(stripped):
         return value
-    # Reject "nan"/"inf", which aren't valid JSON
-    return number if number == number and abs(number) != float("inf") else value
+    if THOUSANDS_RE.match(stripped):
+        stripped = stripped.replace(",", "")
+    elif not NUMBER_RE.match(stripped):
+        return value
+    number = float(stripped)
+    return (
+        int(number)
+        if number.is_integer() and "." not in stripped and "e" not in lowered
+        else number
+    )
 
 
 def parse_delimited(text: str, delimiter: str = ",") -> list[dict[str, Any]]:
@@ -51,6 +61,37 @@ def parse_json(text: str | list | dict) -> list[Any]:
     if not isinstance(data, list):
         raise ValidationError("JSON data must be an array of rows.")
     return data
+
+
+# Order matters: ties go to the first entry (cells often contain commas)
+DELIMITERS = {"tsv": "\t", "csv": ",", "ssv": ";"}
+
+
+def detect_format(text: str) -> str:
+    """Guess whether pasted text is JSON, CSV, TSV or semicolon-separated.
+
+    Spreadsheets (Excel, Google Sheets, Numbers) copy cells as TSV, so the
+    delimiter is whichever of tab/comma/semicolon is most common in the
+    header row.
+    """
+    text = text.lstrip("\ufeff\r\n ")
+    if text[:1] in ("[", "{"):
+        return "json"
+    header = text.split("\n", 1)[0]
+    counts = {fmt: header.count(d) for fmt, d in DELIMITERS.items()}
+    best = max(counts, key=counts.get)
+    return best if counts[best] else "csv"
+
+
+def parse_text(text: str | None) -> list[Any]:
+    """Parse pasted data in any supported format."""
+    text = (text or "").lstrip("\ufeff")
+    if not text.strip():
+        return []
+    fmt = detect_format(text)
+    if fmt == "json":
+        return parse_json(text)
+    return parse_delimited(text, DELIMITERS[fmt])
 
 
 def parse_bytes(content: bytes, filename: str) -> list[Any]:

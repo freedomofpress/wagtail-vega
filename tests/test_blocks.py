@@ -12,7 +12,7 @@ from wagtail.documents.models import Document
 from wagtail.models import Page
 
 from tests.testapp.models import ChartPage, Donation, DonationsChartBlock
-from wagtail_vega.blocks import BaseChartBlock, ChartBlock, SpecBlock
+from wagtail_vega.blocks import BaseChartBlock, ChartBlock, DatasetBlock, SpecBlock
 from wagtail_vega.templatetags.wagtail_vega import wagtail_vega_assets
 
 
@@ -23,11 +23,22 @@ def payload(html):
     return json.loads(match.group(1))
 
 
+def dataset(name, kind, value):
+    """Shorthand for a DatasetBlock value: kind is csv/json (pasted),
+    document (a pk) or url (a {"url", "format"} dict)."""
+    if kind in ("csv", "json"):
+        text = value if isinstance(value, str) else json.dumps(value)
+        return {"name": name, "source_type": "paste", "paste": text}
+    if kind == "document":
+        return {"name": name, "source_type": "document", "document": value}
+    return {"name": name, "source_type": "url", **value}
+
+
 def chart_value(block, spec, data=(), **extra):
     return block.to_python(
         {
             "spec": spec,
-            "data": [{"name": n, "source": [{"type": t, "value": v}]} for n, t, v in data],
+            "data": [dataset(*d) for d in data],
             "description": extra.get("description", ""),
             "caption": extra.get("caption", ""),
             "theme": extra.get("theme", ""),
@@ -286,7 +297,7 @@ def test_streamfield_round_trip(vl_bar):
                 "chart",
                 {
                     "spec": vl_bar,
-                    "data": [{"name": "source", "source": [("csv", "a,b\nx,1")]}],
+                    "data": [{"name": "source", "source_type": "paste", "paste": "a,b\nx,1"}],
                     "description": "",
                     "caption": "",
                     "theme": "",
@@ -300,3 +311,71 @@ def test_streamfield_round_trip(vl_bar):
     assert block.value["spec"] == vl_bar
     assert block.block.get_datasets(block.value) == {"source": [{"a": "x", "b": 1}]}
     assert "wagtail-vega-chart" in str(block)
+
+
+# -- DatasetBlock --------------------------------------------------------------
+
+
+def test_pasted_tsv_and_json(vl_bar):
+    block = ChartBlock()
+    value = chart_value(
+        block, vl_bar, [("source", "csv", "a\tb\nx\t1,000"), ("more", "json", [{"a": "z"}])]
+    )
+    assert block.get_datasets(value) == {"source": [{"a": "x", "b": 1000}], "more": [{"a": "z"}]}
+
+
+@pytest.mark.parametrize(
+    "data,field",
+    [
+        ({"source_type": "paste", "paste": ""}, "paste"),
+        ({"source_type": "paste", "paste": "header_only"}, "paste"),
+        ({"source_type": "paste", "paste": '{"not": "rows"}'}, "paste"),
+        ({"source_type": "paste", "paste": "[oops"}, "paste"),
+        ({"source_type": "document", "document": None}, "document"),
+        ({"source_type": "url", "url": ""}, "url"),
+    ],
+)
+def test_dataset_requires_input_for_selected_source(data, field):
+    block = DatasetBlock()
+    with pytest.raises(StructBlockValidationError) as exc:
+        block.clean(block.to_python({"name": "source", **data}))
+    assert set(exc.value.block_errors) == {field}
+
+
+def test_dataset_clears_inputs_for_other_sources(vega_settings):
+    vega_settings["ALLOWED_DATA_HOSTS"] = ["ok.org"]
+    block = DatasetBlock()
+    value = block.to_python(
+        {
+            "name": "s",
+            "source_type": "url",
+            "paste": "a\n1",
+            "url": "https://ok.org/x.csv",
+            "format": "csv",
+        }
+    )
+    cleaned = block.clean(value)
+    assert not cleaned["paste"] and cleaned["url"] == "https://ok.org/x.csv"
+
+
+def test_chart_block_field_order():
+    assert list(ChartBlock().child_blocks) == ["data", "spec", "description", "caption", "theme"]
+
+    class Reordered(BaseChartBlock):
+        field_order = ("caption", "nope")
+
+    assert list(Reordered().child_blocks) == ["caption", "spec", "description"]
+
+    class Sub(ChartBlock):  # subclasses inherit the order
+        pass
+
+    assert list(Sub().child_blocks)[0] == "data"
+
+
+def test_dataset_block_admin_adapter():
+    from wagtail.admin.telepath import JSContext
+
+    ctx = JSContext()
+    ctx.pack(DatasetBlock())
+    assert "wagtail_vega/admin/dataset-block.js" in str(ctx.media)
+    assert "wagtail_vega/admin/dataset-block.css" in str(ctx.media)

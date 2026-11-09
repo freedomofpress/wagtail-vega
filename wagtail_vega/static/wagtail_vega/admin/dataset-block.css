@@ -1,0 +1,73 @@
+/* wagtail-vega admin: DatasetBlock form styles. Uses Wagtail admin colour
+   tokens so it follows the admin's light/dark theme. */
+
+.wagtail-vega-dataset [hidden] {
+  display: none !important;
+}
+
+/* Paste / Document / URL as a segmented control */
+.wagtail-vega-source-toggle :is(ul, div:has(> label > input[type="radio"]), div:has(> div > label > input[type="radio"])) {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--w-color-border-field-default, #ccc);
+  border-radius: 0.3125rem;
+  overflow: hidden;
+}
+.wagtail-vega-source-toggle li,
+.wagtail-vega-source-toggle :is(ul, div) > div {
+  margin: 0;
+  padding: 0;
+}
+.wagtail-vega-source-toggle label:has(> input[type="radio"]) {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--w-color-text-label, inherit);
+  background: var(--w-color-surface-field, transparent);
+  border-inline-end: 1px solid var(--w-color-border-field-default, #ccc);
+}
+.wagtail-vega-source-toggle :is(li, div):last-child label:has(> input[type="radio"]) {
+  border-inline-end: 0;
+}
+.wagtail-vega-source-toggle label:has(> input[type="radio"]:checked) {
+  color: var(--w-color-text-button, #fff);
+  background: var(--w-color-surface-button-default, #007d7e);
+}
+.wagtail-vega-source-toggle label:has(> input[type="radio"]:focus-visible) {
+  outline: 3px solid var(--w-color-focus, #ffbf47);
+  outline-offset: -3px;
+}
+.wagtail-vega-source-toggle input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Pasted data: monospace, no wrapping, aligned tabs */
+.wagtail-vega-paste textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.875rem;
+  white-space: pre;
+  overflow-x: auto;
+  tab-size: 12;
+}
+
+.wagtail-vega-summary {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--w-color-text-meta, inherit);
+}
+.wagtail-vega-summary p {
+  margin: 0.125rem 0;
+}
+.wagtail-vega-summary.is-error,
+.wagtail-vega-summary__warning {
+  color: var(--w-color-text-error, #cd4444);
+}

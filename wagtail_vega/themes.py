@@ -35,6 +35,7 @@ from typing import Any
 
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.module_loading import import_string
+from django.utils.translation import gettext as _
 
 from .conf import get_setting
 
@@ -109,8 +110,12 @@ def get_theme(name: str | None) -> Theme | None:
 
 
 def theme_choices() -> list[tuple[str, str]]:
-    """Choices for the editor-facing theme picker (blank = site default)."""
-    return [(name, theme.label) for name, theme in get_themes().items()]
+    """Choices for the editor-facing theme picker. The blank choice means
+    "use the default" and is labelled with the default theme's name."""
+    themes = get_themes()
+    default = themes.get(get_setting("DEFAULT_THEME") or "")
+    blank = _("Site default (%s)") % default.label if default else _("Site default")
+    return [("", blank), *((name, theme.label) for name, theme in themes.items())]
 
 
 def resolve_css_vars(value: Any, fallbacks: dict[str, str]) -> Any:

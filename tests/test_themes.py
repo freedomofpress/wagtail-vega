@@ -40,7 +40,7 @@ def test_get_theme_default(vega_settings):
     assert get_theme(None).name == "a"
     assert get_theme("b").name == "b"
     assert get_theme("missing").name == "a"
-    assert theme_choices() == [("a", "a"), ("b", "b")]
+    assert theme_choices() == [("", "Site default (a)"), ("a", "a"), ("b", "b")]
 
 
 def test_get_theme_none(vega_settings):
