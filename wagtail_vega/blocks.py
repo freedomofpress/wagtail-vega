@@ -135,8 +135,9 @@ class SpecBlock(JSONBlock):
     editor_mode = "spec"
 
     def __init__(self, builder=True, **kwargs):
-        # A "Build chart from data" button above the editor (see
-        # widgets.CodeEditor); builder=False leaves it out.
+        # The field shows the chart and an "Edit chart" button that opens
+        # the chart editor (see widgets.CodeEditor); builder=False leaves
+        # them out and shows the code editor inline.
         self.builder = builder
         kwargs.setdefault(
             "help_text",

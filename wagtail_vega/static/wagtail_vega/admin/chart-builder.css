@@ -488,7 +488,6 @@ html.wagtail-vega-builder-open {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;
-
 }
 .wagtail-vega-builder__actions .button[disabled] {
   opacity: 0.6;

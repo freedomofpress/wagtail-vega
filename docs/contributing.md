@@ -25,12 +25,14 @@ $ .venv/bin/ruff check . && .venv/bin/ruff format --check .
 | `tests/test_*.py` | Unit tests: spec handling, validation, themes, data parsing, blocks and SSR. |
 | `tests/test_admin.py` | Creating, validating and previewing chart pages through the Wagtail admin. |
 | `tests/test_editor.py` | The code editor widget and its telepath adapters, and the live validation endpoint. |
-| `tests/test_chart_builder.py` | The chart builder's button on the spec editor and its settings, the document-rows endpoint (permissions, parsing), and that the specs the builder writes pass validation. |
+| `tests/test_chart_builder.py` | The spec field's markup and the chart editor's settings, the document-rows endpoint (permissions, parsing), and that the specs the builder writes pass validation. |
 | `tests/test_static.py` | `collectstatic` with `ManifestStaticFilesStorage`, which fails on dangling source-map references. |
-| `tests/e2e/` | Playwright browser tests: the dataset editor, the code editors, the chart builder (each common chart built with the keyboard only, saved and rendered), and chart rendering with themes, dark mode, a strict CSP, no JavaScript and URL blocking. Marked `e2e`. |
+| `tests/e2e/` | Playwright browser tests: the dataset editor, the code editors, the spec field and chart editor (each common chart built with the keyboard only, saved and rendered; autosave; invalid JSON), and chart rendering with themes, dark mode, a strict CSP, no JavaScript and URL blocking. Marked `e2e`. |
 | `tests/js/` | Unit tests for the browser scripts: data parsing and type detection, JSON error locations and JSON path mapping, the chart builder's specs (every common chart, and opening existing specs without losing anything; the cases are in `tests/js/fixtures/chart-specs.json`, which the Python tests also validate), and security helpers. They use `node:test` and need Node 20 or newer, but no npm packages. |
 
 To skip the browser tests, run `pytest -m "not e2e"`. The SSR tests are skipped if vl-convert isn't installed.
+
+Each browser test fails after 120 seconds ([pytest-timeout](https://pypi.org/project/pytest-timeout/), set in `tests/e2e/conftest.py`), so a test that hangs fails with its name rather than stalling the run. A test can set its own limit with `@pytest.mark.timeout(seconds)`. Run the browser tests with `-v` to see each test's name as it runs.
 
 ### The test matrix
 

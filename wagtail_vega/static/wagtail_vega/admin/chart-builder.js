@@ -372,7 +372,8 @@
       host.wagtailVegaView?.finalize();
       host.wagtailVegaView = result.view;
       for (const child of [...host.children]) if (child !== target) child.remove();
-      return { messages: [...messages, ...logged.map((m) => t("previewNote", { message: m }))] };
+      // Vega logs some warnings once per view: show each once
+      return { messages: [...messages, ...[...new Set(logged)].map((m) => t("previewNote", { message: m }))] };
     } catch (e) {
       target.remove();
       return { messages: logged, error: e.message };
