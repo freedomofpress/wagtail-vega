@@ -29,6 +29,7 @@ resolved from ``fallbacks``, or from a ``var(--token, fallback)`` default.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -38,6 +39,8 @@ from django.utils.module_loading import import_string
 from django.utils.translation import gettext as _
 
 from .conf import get_setting
+
+logger = logging.getLogger(__name__)
 
 BUILTIN_PREFIX = "vega:"
 THEME_KEYS = {"label", "config", "dark", "fallbacks", "vega_theme"}
@@ -88,8 +91,13 @@ def build_theme(name: str, definition: Any) -> Theme:
         raise ImproperlyConfigured(
             f"WAGTAIL_VEGA theme {name!r} must be a dict, dotted path or 'vega:<name>'"
         )
-    if not (set(definition) & THEME_KEYS - {"label"}):
-        definition = {"config": definition}
+    if not (set(definition) & (THEME_KEYS - {"label"})):
+        # A plain Vega config, perhaps with a label (which Vega doesn't use)
+        config = {k: v for k, v in definition.items() if k != "label"}
+        definition = {
+            "config": config,
+            **({"label": definition["label"]} if "label" in definition else {}),
+        }
     unknown = set(definition) - THEME_KEYS
     if unknown:
         raise ImproperlyConfigured(
@@ -117,6 +125,9 @@ def get_theme(name: str | None) -> Theme | None:
     themes = get_themes()
     if name and name in themes:
         return themes[name]
+    if name:
+        # e.g. an editor's saved choice of a theme that's since been removed
+        logger.warning("wagtail-vega: theme %r isn't in THEMES; using the default", name)
     default = get_setting("DEFAULT_THEME")
     if default:
         if default not in themes:

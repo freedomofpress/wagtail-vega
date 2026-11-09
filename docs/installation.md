@@ -104,7 +104,7 @@ In the Wagtail admin, edit a page and add a **Chart** block.
    }
    ```
 
-3. Fill in **Description**, which is read to people using screen readers, e.g. "Bar chart of records requests per quarter".
+3. Fill in **Description**, which is read to people using screen readers. Say what the chart shows, not just what kind of chart it is, e.g. "Records requests rose every quarter, from 1,120 to 1,460".
 
 4. Preview or publish the page.
 

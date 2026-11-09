@@ -1,5 +1,7 @@
 """Charts render in a real browser: themes, dark mode, CSP, no-JS, security."""
 
+import re
+
 import pytest
 from playwright.sync_api import expect
 
@@ -127,6 +129,55 @@ def test_without_javascript_or_ssr(browser, live_server, chart_page):
     page.goto(live_server.url + chart_page.url)
     expect(page.locator(".wagtail-vega__ssr")).to_have_count(0)
     expect(page.locator("details.wagtail-vega__data")).to_have_count(3)
+    # Readers are pointed at the data, when there's a table of it
+    messages = page.locator(".wagtail-vega__noscript")
+    expect(messages.first).to_have_text(
+        "This chart needs JavaScript to display. Its data is under “Chart data” below."
+    )
+    expect(messages.last).to_have_text("This chart needs JavaScript to display.")
+    # No room is kept for a chart that will never load
+    assert page.locator(CHARTS).first.evaluate("el => getComputedStyle(el).minHeight") in (
+        "0px",
+        "auto",
+    )
+
+
+def test_room_is_kept_while_charts_load(page, live_server, chart_page):
+    """Until a chart is drawn, its element keeps some height, so the text
+    below doesn't jump when it appears."""
+    page.route("**/vega-embed.min.js", lambda route: route.abort())
+    page.goto(live_server.url + chart_page.url)
+    chart = page.locator(CHARTS).first
+    assert chart.evaluate("el => getComputedStyle(el).minHeight") == "320px"
+    assert chart.bounding_box()["height"] >= 320
+
+
+def test_data_table_styles(page, live_server, chart_page):
+    page.goto(live_server.url + chart_page.url)
+    wait_for_charts(page)
+    figure = page.locator("figure.wagtail-vega").first
+    figure.locator("summary").click()
+    align = "el => getComputedStyle(el).textAlign"
+    # requests is a number column: right-aligned, so the digits line up
+    assert figure.locator("th", has_text="requests").evaluate(align) == "end"
+    assert figure.locator("td.is-numeric").first.evaluate(align) == "end"
+    assert figure.locator("th", has_text="quarter").evaluate(align) == "start"
+
+    # On paper, a closed "Chart data" is left out, and an open one printed
+    page.emulate_media(media="print")
+    expect(figure.locator("details.wagtail-vega__data")).to_be_visible()
+    expect(page.locator("details.wagtail-vega__data").nth(1)).to_be_hidden()
+
+
+def test_narrow_screens_dont_scroll_sideways(browser, live_server, chart_page):
+    width = 390  # a phone
+    page = browser.new_page(viewport={"width": width, "height": 800})
+    page.goto(live_server.url + chart_page.url)
+    wait_for_charts(page)
+    for summary in page.locator("summary").all():
+        summary.click()
+    # Wide charts and tables scroll inside their own box, not the page
+    assert page.evaluate("document.documentElement.scrollWidth") <= width
 
 
 def test_runtime_urls_outside_allowlist_are_blocked(page, live_server, transactional_db):
@@ -231,6 +282,21 @@ def test_data_errors_are_reported(page, live_server, transactional_db):
     expect(page.locator(f"{CHARTS}.has-error")).to_have_count(1)
     expect(page.locator(f"{CHARTS}.is-rendered")).to_have_count(0)
     assert "Loading failed" in page.evaluate("window.chartError")
+    # Readers are told, not just left with an empty chart
+    expect(page.locator(f"{CHARTS} .wagtail-vega__error")).to_have_text(
+        "Sorry, this chart couldn't be displayed."
+    )
+    expect(page.locator(CHARTS)).not_to_have_attribute("aria-busy", "true")
+
+
+def test_spec_errors_are_shown_to_readers(page, live_server, transactional_db):
+    # Saved before this version checked dataset names, say, or edited in code
+    spec = {**vega_bars(None), "signals": [{"name": "broken", "update": "nope("}]}
+    chart_page = make_page("bad-spec", ("chart", {"spec": spec, "data": []}))
+    page.goto(live_server.url + chart_page.url)
+    expect(page.locator(f"{CHARTS}.has-error")).to_have_count(1)
+    expect(page.locator(".wagtail-vega__error")).to_be_visible()
+    expect(page.locator(".wagtail-vega__noscript")).to_be_hidden()
 
 
 def test_chart_links_to_other_hosts_work(page, live_server, transactional_db):
@@ -256,3 +322,30 @@ def test_page_body_without_context_loads_scripts_once(page, live_server, chart_p
     assert page.locator("script[src*='wagtail-vega-loader.js']").count() == 4
     assert sum("vendor/vega.min.js" in u for u in requests) == 1
     assert page.evaluate("document.querySelectorAll('script[src*=\"vega.min.js\"]').length") == 1
+
+
+def test_tooltip_follows_dark_mode(browser, live_server, chart_page):
+    page = browser.new_page(color_scheme="dark")
+    page.goto(live_server.url + chart_page.url)
+    wait_for_charts(page)
+    page.locator(CHARTS).first.locator(".mark-rect path").first.hover()
+    tooltip = page.locator("#vg-tooltip-element")
+    expect(tooltip).to_have_class(re.compile(r"\bvisible\b"))
+    expect(tooltip).to_have_class(re.compile(r"\bdark-theme\b"))
+    # Styled by wagtail-vega.css (nothing injected at runtime)
+    assert page.locator("style#vega-tooltip-style").count() == 0
+    assert tooltip.evaluate("e => getComputedStyle(e).position") == "fixed"
+
+
+def test_actions_menu_is_styled(page, live_server, chart_page, vega_settings):
+    vega_settings["EMBED_OPTIONS"] = {"actions": {"export": True, "source": False}}
+    page.goto(live_server.url + chart_page.url)
+    wait_for_charts(page)
+    menu = page.locator(CHARTS).first.locator(".vega-actions")
+    expect(menu).to_be_attached()
+    # vega-embed's own styles, shipped in wagtail-vega.css rather than injected
+    style = menu.evaluate(
+        "e => { const s = getComputedStyle(e); return [s.position, s.flexDirection]; }"
+    )
+    assert style == ["absolute", "column"]
+    assert page.locator("style#vega-embed-style").count() == 0

@@ -17,11 +17,14 @@ from __future__ import annotations
 
 import collections
 import json
+import logging
 import secrets
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any
 
 from django import forms
+from django.core import checks
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator, URLValidator
 from django.forms.fields import InvalidJSONInput
@@ -36,20 +39,24 @@ from wagtail.blocks.struct_block import StructBlockAdapter, StructBlockValidatio
 from wagtail.documents.blocks import DocumentChooserBlock
 
 from . import ssr
-from .conf import get_setting
+from .conf import DEFAULTS, get_allowed_hosts, get_setting
 from .data import DOCUMENT_SUFFIXES, document_rows, parse_text
 from .encoders import VegaJSONEncoder
 from .spec import (
+    dataset_references,
     deep_merge,
     host_allowed,
     inject_datasets,
     is_remote,
+    normalize_url,
     remote_data,
     spec_kind,
 )
 from .themes import Theme, get_theme, resolve_css_vars, theme_choices
-from .validation import spec_problems
+from .validation import SpecProblem, spec_problems
 from .widgets import EDITOR_JS, CodeEditor
+
+logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------
 # JSON input
@@ -60,6 +67,9 @@ class PrettyJSONField(forms.JSONField):
     def prepare_value(self, value):
         if isinstance(value, InvalidJSONInput):
             return value
+        if value is None:
+            # An empty field, not the JSON text "null"
+            return ""
         return json.dumps(value, indent=2, ensure_ascii=False, cls=self.encoder)
 
 
@@ -69,17 +79,19 @@ class JSONBlock(blocks.FieldBlock):
     editor_mode = "json"
     builder = False
 
-    def __init__(self, required=True, help_text=None, rows=16, validators=(), **kwargs):
+    def __init__(
+        self, required=True, help_text=None, rows=16, validators=(), placeholder=None, **kwargs
+    ):
+        attrs = {"rows": rows, "class": "wagtail-vega-json"}
+        if placeholder:
+            # Shown in the code editor while it's empty
+            attrs["placeholder"] = placeholder
         self.field = PrettyJSONField(
             required=required,
             help_text=help_text,
             validators=validators,
             encoder=VegaJSONEncoder,
-            widget=CodeEditor(
-                mode=self.editor_mode,
-                attrs={"rows": rows, "class": "wagtail-vega-json"},
-                builder=self.builder,
-            ),
+            widget=CodeEditor(mode=self.editor_mode, attrs=attrs, builder=self.builder),
         )
         super().__init__(**kwargs)
 
@@ -101,6 +113,21 @@ class JSONBlock(blocks.FieldBlock):
         icon = "code"
 
 
+SPEC_PLACEHOLDER = _(
+    """Paste a spec here. For example, a bar chart of the dataset called "source":
+
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": {"name": "source"},
+  "mark": "bar",
+  "encoding": {
+    "x": {"field": "quarter", "type": "nominal"},
+    "y": {"field": "requests", "type": "quantitative"}
+  }
+}"""
+)
+
+
 class SpecBlock(JSONBlock):
     """A Vega or Vega-Lite specification, validated on save (and live, in the
     editor)."""
@@ -108,16 +135,17 @@ class SpecBlock(JSONBlock):
     editor_mode = "spec"
 
     def __init__(self, builder=True, **kwargs):
-        # A "Build chart" button above the editor (see widgets.CodeEditor);
-        # builder=False leaves it out.
+        # A "Build chart from data" button above the editor (see
+        # widgets.CodeEditor); builder=False leaves it out.
         self.builder = builder
         kwargs.setdefault(
             "help_text",
             _(
-                "A Vega or Vega-Lite spec in JSON. Refer to datasets by name, e.g. "
-                '"data": {"name": "source"}.'
+                "The chart's Vega-Lite or Vega spec, in JSON. Load a dataset by its name, "
+                'e.g. "data": {"name": "source"}.'
             ),
         )
+        kwargs.setdefault("placeholder", SPEC_PLACEHOLDER)
         super().__init__(**kwargs)
 
     def clean(self, value):
@@ -153,10 +181,12 @@ SOURCE_FIELDS = {PASTE: ("paste",), DOCUMENT: ("document",), URL: ("url", "forma
 
 
 def validate_data_url(value):
-    """Accept http(s) URLs and site-relative paths ("/media/data.csv")."""
-    if value.startswith("/") and not value.startswith("//"):
+    """Accept http(s) URLs and site-relative paths ("/media/data.csv"),
+    judged as the browser will see them (see ``spec.normalize_url``)."""
+    url = normalize_url(value)
+    if url.startswith("/") and not url.startswith("//"):
         return
-    URLValidator(schemes=["http", "https"])(value)
+    URLValidator(schemes=["http", "https"])(url)
 
 
 class DataURLBlock(blocks.CharBlock):
@@ -170,13 +200,17 @@ class DataURLBlock(blocks.CharBlock):
         super().__init__(**kwargs)
 
 
+PASTE_PLACEHOLDER = _("For example:\n\nquarter,requests\nQ1,1120\nQ2,1340")
+
+
 class PastedDataBlock(blocks.TextBlock):
     """Pasted CSV, TSV or JSON, edited in a code editor that shows tabs, doesn't
     wrap lines, and marks ragged rows and JSON errors."""
 
     @cached_property
     def field(self):
-        widget = CodeEditor(mode="data", attrs={"rows": self.rows})
+        attrs = {"rows": self.rows, "placeholder": PASTE_PLACEHOLDER}
+        widget = CodeEditor(mode="data", attrs=attrs)
         return forms.CharField(widget=widget, **self.field_options)
 
     def deconstruct(self):
@@ -219,7 +253,7 @@ class DatasetBlock(blocks.StructBlock):
     paste = PastedDataBlock(
         required=False,
         rows=8,
-        label=_("Data"),
+        label=_("Pasted data"),
         help_text=_(
             "Paste CSV, JSON, or cells copied from a spreadsheet. "
             "The first row must be the column names."
@@ -263,7 +297,7 @@ class DatasetBlock(blocks.StructBlock):
         elif source == URL:
             if not value["url"]:
                 errors["url"] = ValidationError(_("Enter a URL."))
-            elif not host_allowed(value["url"], get_setting("ALLOWED_DATA_HOSTS")):
+            elif not host_allowed(value["url"], get_allowed_hosts()):
                 errors["url"] = ValidationError(_("Data can't be loaded from this host."))
         if errors:
             raise StructBlockValidationError(block_errors=errors)
@@ -335,7 +369,7 @@ class Chart:
             "darkConfig": self.dark_config,
             "embed": self.embed_options,
             "fallbacks": self.fallbacks,
-            "allowedHosts": list(get_setting("ALLOWED_DATA_HOSTS")),
+            "allowedHosts": get_allowed_hosts(),
             "cspSafe": bool(get_setting("CSP_SAFE")),
         }
 
@@ -352,16 +386,33 @@ def build_tables(datasets: dict[str, Any], max_rows: int) -> list[dict]:
         columns: list[str] = []
         for row in rows:
             columns.extend(k for k in row if k not in columns)
+        shown = [[row.get(c) for c in columns] for row in rows[:max_rows]]
+        numeric = [_is_numeric_column([r[i] for r in shown]) for i in range(len(columns))]
         tables.append(
             {
                 "name": name,
                 "columns": columns,
-                "rows": [[row.get(c) for c in columns] for row in rows[:max_rows]],
+                "rows": shown,
+                # As columns and rows, with whether each column holds numbers
+                # (the template right-aligns them, so their digits line up)
+                "head": [{"name": c, "numeric": n} for c, n in zip(columns, numeric, strict=True)],
+                "cells": [
+                    [{"value": v, "numeric": n} for v, n in zip(row, numeric, strict=True)]
+                    for row in shown
+                ],
                 "truncated": len(rows) > max_rows,
                 "total": len(rows),
             }
         )
     return tables
+
+
+def _is_numeric_column(values: list[Any]) -> bool:
+    """Whether every value that isn't blank is a number (not a boolean)."""
+    present = [v for v in values if v is not None and v != ""]
+    return bool(present) and all(
+        isinstance(v, int | float | Decimal) and not isinstance(v, bool) for v in present
+    )
 
 
 class BaseChartBlock(blocks.StructBlock):
@@ -384,13 +435,21 @@ class BaseChartBlock(blocks.StructBlock):
     description = blocks.TextBlock(
         required=False,
         rows=2,
-        help_text=_("Describe what the chart shows, for people using screen readers."),
+        help_text=_(
+            "What the chart shows, and what readers should take from it, e.g. "
+            '"Requests rose every quarter, from 1,120 to 1,460." '
+            "Read out by screen readers; not shown on the page."
+        ),
     )
-    caption = blocks.CharBlock(required=False)
+    caption = blocks.CharBlock(
+        required=False,
+        help_text=_("Shown under the chart: a title, the source of the data, or notes."),
+    )
 
     class Meta:
         icon = "wagtail-vega-chart"
         label = _("Chart")
+        description = _("A chart drawn from data, with a description and a caption.")
         template = "wagtail_vega/chart.html"
         theme = None
         ssr = None
@@ -420,15 +479,42 @@ class BaseChartBlock(blocks.StructBlock):
     def get_theme(self, value, context=None) -> Theme | None:
         return get_theme(self.meta.theme or value.get("theme"))
 
+    def check(self, **kwargs):
+        errors = super().check(**kwargs)
+        if self.meta.theme and self.meta.theme not in get_setting("THEMES"):
+            errors.append(
+                checks.Error(
+                    f"{type(self).__name__} uses theme {self.meta.theme!r}, "
+                    "which isn't in WAGTAIL_VEGA['THEMES'].",
+                    hint="Fix Meta.theme, or add the theme to the THEMES setting.",
+                    obj=kwargs.get("field", self),
+                    id="wagtail_vega.E003",
+                )
+            )
+        return errors
+
     def get_embed_options(self, value, context=None, theme=None) -> dict:
+        """vega-embed options: the defaults, then the ``EMBED_OPTIONS``
+        setting, then ``Meta.embed_options``, each merged over the last.
+
+        vega-embed's own styles ship in ``wagtail-vega.css`` rather than being
+        injected at runtime (which a strict CSP would block), so
+        ``defaultStyle`` is always off. Tooltip options (a dict) are kept,
+        with vega-tooltip's style injection turned off for the same reason;
+        ``"tooltip": False`` turns tooltips off.
+        """
         options = {
+            **DEFAULTS["EMBED_OPTIONS"],
             **get_setting("EMBED_OPTIONS"),
             **(self.meta.embed_options or {}),
-            # Styles ship in wagtail-vega.css, so nothing is injected
-            # (keeps strict CSP happy)
             "defaultStyle": False,
-            "tooltip": {"disableDefaultStyle": True},
         }
+        tooltip = options.get("tooltip", True)
+        if tooltip is not False:
+            options["tooltip"] = {
+                **(tooltip if isinstance(tooltip, dict) else {}),
+                "disableDefaultStyle": True,
+            }
         if theme and theme.vega_theme:
             options["theme"] = theme.vega_theme
         return options
@@ -457,9 +543,13 @@ class BaseChartBlock(blocks.StructBlock):
 
     # -- rendering ----------------------------------------------------------
 
-    def build_chart(self, value, context=None) -> Chart:
+    def build_chart(self, value, context=None, *, for_page=True) -> Chart:
+        """Everything needed to render the chart. With ``for_page=False``, the
+        page-only extras (server-rendered SVG and fallback tables) are
+        skipped."""
         theme = self.get_theme(value, context)
         datasets = self.get_datasets(value, context)
+        self.check_remote_datasets(datasets)
         spec = self.get_spec(value, context, datasets=datasets, theme=theme)
         kind = spec_kind(spec)
 
@@ -476,6 +566,8 @@ class BaseChartBlock(blocks.StructBlock):
             if theme.dark:
                 dark = self.get_spec(value, context, datasets, theme, dark=True)
                 chart.dark_config = dark.get("config")
+        if not for_page:
+            return chart
         if self.use_ssr(value):
             fallbacks = theme.fallbacks if theme else {}
             chart.svg = ssr.render_svg(
@@ -487,10 +579,101 @@ class BaseChartBlock(blocks.StructBlock):
             chart.tables = build_tables(datasets, get_setting("FALLBACK_TABLE_MAX_ROWS"))
         return chart
 
+    def check_remote_datasets(self, datasets) -> None:
+        """Warn about remote datasets on hosts that aren't allowed.
+
+        Editors' URLs are checked when they save. URLs that ``get_datasets()``
+        returns from code aren't, and would only fail in readers' browsers, so
+        log them where the developer will see them.
+        """
+        allowed = get_allowed_hosts()
+        for name, dataset in datasets.items():
+            if is_remote(dataset) and not host_allowed(dataset["url"], allowed):
+                logger.warning(
+                    "wagtail-vega: %s.get_datasets() returned dataset %r with URL %s, "
+                    "whose host isn't in ALLOWED_DATA_HOSTS; browsers will refuse to load it.",
+                    type(self).__name__,
+                    name,
+                    dataset["url"],
+                )
+
+    def get_api_representation(self, value, context=None):
+        """The chart as Wagtail's API returns it: the final spec (datasets
+        injected, theme merged) and everything else the page's script gets,
+        so a headless frontend can render it with vega-embed."""
+        chart = self.build_chart(value, context, for_page=False)
+        return json.loads(
+            json.dumps(
+                {
+                    "kind": chart.kind,
+                    **chart.payload,
+                    "description": chart.description,
+                    "caption": chart.caption,
+                },
+                cls=VegaJSONEncoder,
+            )
+        )
+
     def get_context(self, value, parent_context=None):
         context = super().get_context(value, parent_context=parent_context)
         context["chart"] = self.build_chart(value, parent_context)
         return context
+
+
+class ChartBlockAdapter(StructBlockAdapter):
+    """Chart blocks in the admin: a collapsed chart is labelled with its
+    title, caption or description, and the spec editor warns, as you type,
+    about datasets the spec loads that the chart doesn't have."""
+
+    js_constructor = "wagtail_vega.blocks.ChartBlock"
+
+    def js_args(self, block):
+        name, children, meta = super().js_args(block)
+        meta = {
+            **meta,
+            "wagtailVega": {
+                "missingDataset": missing_dataset_messages(),
+                "extraDatasetNames": list(getattr(block, "extra_dataset_names", ())),
+            },
+        }
+        return [name, children, meta]
+
+    @cached_property
+    def media(self):
+        return super().media + forms.Media(js=["wagtail_vega/admin/chart-block.js"])
+
+
+register(ChartBlockAdapter(), BaseChartBlock)
+
+
+def missing_dataset_messages() -> dict[str, str]:
+    """The message for a spec that loads a dataset the chart doesn't have,
+    with and without other datasets to suggest. ``%(name)s`` is the missing
+    name, ``%(names)s`` the chart's dataset names. Also used live, by the
+    admin's spec editor (chart-block.js)."""
+    return {
+        "none": _('This chart has no dataset called "%(name)s". Add one under Data.'),
+        "some": _(
+            'This chart has no dataset called "%(name)s". Use one of its datasets '
+            "(%(names)s), or add one under Data."
+        ),
+    }
+
+
+def missing_dataset_problems(spec, names) -> list[SpecProblem]:
+    """A problem for each dataset the spec loads by name that isn't in
+    ``names``."""
+    messages = missing_dataset_messages()
+    problems = []
+    for path, name in dataset_references(spec):
+        if name in names:
+            continue
+        message = messages["some" if names else "none"] % {
+            "name": name,
+            "names": ", ".join(names),
+        }
+        problems.append(SpecProblem(path, message))
+    return problems
 
 
 class ChartBlock(BaseChartBlock):
@@ -498,10 +681,17 @@ class ChartBlock(BaseChartBlock):
 
     field_order = ("data", "spec", "description", "caption", "theme")
 
+    #: Names of datasets a subclass adds in ``get_datasets()`` on top of the
+    #: editor's, so specs may load them without failing validation.
+    extra_dataset_names: tuple[str, ...] = ()
+
     data = blocks.ListBlock(
         DatasetBlock(),
         min_num=0,
-        help_text=_("Datasets the spec can refer to by name."),
+        help_text=_(
+            "The data for this chart. Give each dataset a different name, and use "
+            "that name in the spec."
+        ),
     )
     theme = blocks.ChoiceBlock(choices=theme_choices, required=False)
 
@@ -518,6 +708,11 @@ class ChartBlock(BaseChartBlock):
                 non_block_errors=ErrorList(
                     [ValidationError(_("Dataset names must be unique: %s") % ", ".join(duplicates))]
                 )
+            )
+        missing = missing_dataset_problems(value["spec"], [*names, *self.extra_dataset_names])
+        if missing:
+            raise StructBlockValidationError(
+                block_errors={"spec": ValidationError([str(p) for p in missing])}
             )
         return value
 

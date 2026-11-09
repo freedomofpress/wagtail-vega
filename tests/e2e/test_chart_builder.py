@@ -700,6 +700,29 @@ def test_document_dataset(editor, settings, tmp_path):
     expect(control(dialog, "field", "y")).to_have_value("sales")
 
 
+def test_datasets_from_code_are_listed_but_not_previewed(editor):
+    """ChartBlock.extra_dataset_names (datasets a subclass adds in code) are in
+    the picker, disabled, since there are no rows to build from."""
+    # What chart-block.js does for a block with extra_dataset_names
+    spec_field(editor).evaluate(
+        """(el) => el.closest("[data-contentpath]").parentElement
+            .setAttribute("data-wagtail-vega-extra-datasets", '["totals"]')"""
+    )
+    spec = {**BAR, "data": {"name": "totals"}}
+    set_externally(spec_field(editor), json.dumps(spec))
+    dialog = open_builder(editor)
+    picker = dialog.get_by_label("Dataset")
+    expect(picker).to_be_visible()
+    expect(picker).to_have_value("source")
+    option = picker.locator('option[value="totals"]')
+    expect(option).to_have_text("totals (from code, can't be previewed here)")
+    expect(option).to_be_disabled()
+    expect(dialog.locator("[role=status]")).to_contain_text(
+        "It uses “totals”, whose data comes from code"
+    )
+    wait_for_preview(dialog)
+
+
 def test_several_datasets_offer_a_picker(editor):
     data_list = editor.locator('[data-contentpath="data"]').first
     data_list.locator("button[data-streamfield-list-add]").last.click()

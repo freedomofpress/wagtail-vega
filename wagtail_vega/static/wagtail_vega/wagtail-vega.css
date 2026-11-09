@@ -23,14 +23,79 @@
 :where(.wagtail-vega__target) {
   width: 100%;
 }
+
+/* While the chart loads, keep room for it, so the text below doesn't jump
+   when it appears. Not without JavaScript, or when a server-rendered SVG
+   already takes up the room. Set --wagtail-vega-loading-height to suit your
+   charts (0 turns it off). */
+@media (scripting: enabled) {
+  :where(.wagtail-vega__chart:not(.is-rendered, .has-error):not(:has(> .wagtail-vega__ssr))) {
+    min-height: var(--wagtail-vega-loading-height, 20rem);
+    background: color-mix(in srgb, currentColor 4%, transparent);
+    border-radius: 4px;
+  }
+}
+
+/* The "needs JavaScript" and "couldn't be displayed" messages */
+:where(.wagtail-vega__noscript, .wagtail-vega__error) {
+  margin: 0;
+  padding: 1em;
+  border: 1px dashed color-mix(in srgb, currentColor 40%, transparent);
+  border-radius: 4px;
+}
+
+:where(.wagtail-vega__data, .wagtail-vega__caption) {
+  margin-block-start: 0.5em;
+}
+:where(.wagtail-vega__data) > summary {
+  cursor: pointer;
+}
+/* Wide tables scroll sideways rather than widening the page */
+:where(.wagtail-vega__table) {
+  max-width: 100%;
+  overflow-x: auto;
+}
 :where(.wagtail-vega__data) table {
+  margin-block: 0.5em;
   border-collapse: collapse;
   font-size: 0.875em;
+}
+:where(.wagtail-vega__data) caption {
+  padding-block: 0.25em;
+  font-weight: bold;
+  text-align: start;
 }
 :where(.wagtail-vega__data) :is(th, td) {
   padding: 0.25em 0.5em;
   text-align: start;
-  border-bottom: 1px solid currentColor;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+}
+:where(.wagtail-vega__data) th {
+  vertical-align: bottom;
+  border-bottom: 2px solid currentColor;
+}
+/* Numbers line up on their last digit */
+:where(.wagtail-vega__data) .is-numeric {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+:where(.wagtail-vega__note) {
+  margin-block: 0.25em;
+  font-size: 0.875em;
+}
+
+@media print {
+  :where(.wagtail-vega__chart) {
+    overflow: visible;
+    break-inside: avoid;
+  }
+  /* A closed "Chart data" is no use on paper */
+  :where(.wagtail-vega__data:not([open])) {
+    display: none;
+  }
+  #vg-tooltip-element {
+    display: none;
+  }
 }
 
 /* vega-tooltip styles, shipped as a file so nothing is injected at runtime
@@ -78,3 +143,130 @@
   color: white;
 }
 #vg-tooltip-element.dark-theme td.key { color: #bfbfbf; }
+
+/* vega-embed 7.3.0 default styles (BSD-3-Clause), copied from its build: it
+   normally injects them at runtime, which a strict style-src CSP blocks.
+   They style the actions menu (EMBED_OPTIONS "actions") and chart sizing. */
+.vega-embed {
+  position: relative;
+  display: inline-block;
+  box-sizing: border-box;
+}
+.vega-embed.fit-x {
+  display: block;
+  width: 100%;
+}
+.vega-embed.has-actions {
+  padding-right: 38px;
+}
+.vega-embed details:not([open]) > :not(summary) {
+  display: none !important;
+}
+.vega-embed summary {
+  list-style: none;
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 6px;
+  z-index: 1000;
+  background: white;
+  box-shadow: 1px 1px 3px rgba(0, 0, 0, 0.1);
+  color: #1b1e23;
+  border: 1px solid #aaa;
+  border-radius: 999px;
+  opacity: 0.2;
+  transition: opacity 0.4s ease-in;
+  cursor: pointer;
+  line-height: 0px;
+}
+.vega-embed summary::-webkit-details-marker {
+  display: none;
+}
+.vega-embed summary:active {
+  box-shadow: #aaa 0px 0px 0px 1px inset;
+}
+.vega-embed summary svg {
+  width: 14px;
+  height: 14px;
+}
+.vega-embed details[open] summary {
+  opacity: 0.7;
+}
+.vega-embed:hover summary, .vega-embed:focus-within summary {
+  opacity: 1 !important;
+  transition: opacity 0.2s ease;
+}
+.vega-embed .vega-actions {
+  position: absolute;
+  z-index: 1001;
+  top: 35px;
+  right: -9px;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 8px;
+  padding-top: 8px;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.2);
+  border: 1px solid #d9d9d9;
+  background: white;
+  animation-duration: 0.15s;
+  animation-name: scale-in;
+  animation-timing-function: cubic-bezier(0.2, 0, 0.13, 1.5);
+  text-align: left;
+}
+.vega-embed .vega-actions a {
+  padding: 8px 16px;
+  font-family: sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: #434a56;
+  text-decoration: none;
+}
+.vega-embed .vega-actions a:hover, .vega-embed .vega-actions a:focus {
+  background-color: #f7f7f9;
+  color: black;
+}
+.vega-embed .vega-actions::before, .vega-embed .vega-actions::after {
+  content: "";
+  display: inline-block;
+  position: absolute;
+}
+.vega-embed .vega-actions::before {
+  left: auto;
+  right: 14px;
+  top: -16px;
+  border: 8px solid rgba(0, 0, 0, 0);
+  border-bottom-color: #d9d9d9;
+}
+.vega-embed .vega-actions::after {
+  left: auto;
+  right: 15px;
+  top: -14px;
+  border: 7px solid rgba(0, 0, 0, 0);
+  border-bottom-color: #fff;
+}
+.vega-embed .chart-wrapper.fit-x {
+  width: 100%;
+}
+.vega-embed .chart-wrapper.fit-y {
+  height: 100%;
+}
+
+.vega-embed-wrapper {
+  max-width: 100%;
+  overflow: auto;
+  padding-right: 14px;
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+

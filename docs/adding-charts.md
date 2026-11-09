@@ -28,8 +28,8 @@ It can also go inside a `StructBlock`, `ListBlock` or nested `StreamBlock`, like
 | --- | --- | --- |
 | `data` | `ListBlock(DatasetBlock())` | Named datasets that the spec can refer to. Can be empty. |
 | `spec` | `SpecBlock` | The Vega or Vega-Lite spec, as JSON. Required. |
-| `description` | `TextBlock` | Optional. Read to people using screen readers. |
-| `caption` | `CharBlock` | Optional. Shown as the figure's `<figcaption>`. |
+| `description` | `TextBlock` | Optional. Read to people using screen readers; not shown. |
+| `caption` | `CharBlock` | Optional. Shown under the chart, as the figure's `<figcaption>`. |
 | `theme` | `ChoiceBlock` | Optional. One of the themes in `WAGTAIL_VEGA["THEMES"]`. Blank means the site default. |
 
 The theme choices are read from settings when the form is built, so adding or removing a theme doesn't need a migration.
@@ -113,6 +113,8 @@ Each item in the `data` list is a {py:class}`~wagtail_vega.blocks.DatasetBlock`,
 
 Names must start with a letter or underscore and contain only letters, numbers, hyphens and underscores. They must be unique within a chart. The default name is `source`.
 
+Every dataset the spec loads by name must be one of the chart's datasets, or the block doesn't validate. That covers each `"data": {"name": ...}` in a Vega-Lite spec, at any depth (layers, lookups), except names in the spec's own `datasets`, and each entry of a Vega spec's `data` that has only a `name` (and maybe a `format`). The check is in `ChartBlock.clean()`, against the names in `data`; if a subclass adds datasets in `get_datasets()`, override `clean()` too. Pages saved before this check keep rendering, and the check applies the next time they're saved.
+
 ### Paste
 
 Pasted data can be CSV, JSON, or cells copied from Excel, Google Sheets or Numbers, which copy as tab-separated text.
@@ -163,4 +165,4 @@ html = block.render(value, context={"request": request})
 
 Without a `request` in the context, each chart outputs a small loader script instead of the library scripts, and the loader makes sure the libraries load only once per page. In a Wagtail page template, `{% include_block %}` passes the page's context, including `request`, on to the block.
 
-`ChartBlock` doesn't have its own API representation, so in the Wagtail API it appears as the raw block value: the spec, and the dataset settings as the editor entered them.
+In the Wagtail API, chart blocks appear as the final spec plus everything needed to render it, not the editor's raw input. See [](frontend.md#the-wagtail-api).

@@ -19,7 +19,8 @@ WAGTAIL_VEGA = {
 - `"*.example.org"` matches `example.org`, `data.example.org` and `a.b.example.org`.
 - `"*"` allows every host. Use it with care.
 - Only `http` and `https` URLs are allowed, apart from relative ones.
-- Relative URLs, such as `/media/data.csv`, are always allowed, because they're on your own site.
+- Relative URLs, such as `/media/data.csv`, are always allowed, because they're on your own site. So are absolute URLs to your site's own hostnames: those of Wagtail's sites and of `WAGTAILADMIN_BASE_URL`. `localhost` and loopback addresses are left out even if a site uses them, since they'd let a chart make readers' browsers fetch from their own machine; list them in `ALLOWED_DATA_HOSTS` for local development.
+- URLs are checked the way browsers read them: leading and trailing spaces and control characters are ignored, tabs and newlines removed, and backslashes count as slashes. So `/\evil.example/data.csv`, which browsers fetch from `evil.example`, isn't mistaken for a path on your site. Scheme-relative URLs (`//data.example.org/x.csv`) are allowed if their host is.
 
 The URLs editors can enter for URL datasets must also be `http`, `https` or a path starting with `/`. A path like `data.csv` is rejected because it would depend on the page's URL.
 
@@ -57,7 +58,7 @@ The spec field's **Build chart from data** button (see {doc}`editor-experience`)
 
 Some consequences:
 
-- The browser checks against the page's **origin**, while the server treats any relative URL as allowed. An absolute URL to your own site, like `https://www.example.org/media/data.csv`, is allowed in the browser but rejected on save unless the host is in `ALLOWED_DATA_HOSTS`. Use a relative URL instead.
+- URLs that a custom data source returns from `get_datasets()` aren't entered by editors, so nothing checks them on save. When a chart is rendered, a blocked one is logged as a warning on the `wagtail_vega.blocks` logger, so you notice before readers do.
 - The allowlist only covers what charts **load**: data and images. [`href`](https://vega.github.io/vega-lite/docs/encoding.html#href) links in a chart can go anywhere, like any other link on the page. Vega still refuses `javascript:` links.
 - If you change the allowlist, existing pages aren't checked again, but their charts are blocked in the browser from loading from removed hosts.
 

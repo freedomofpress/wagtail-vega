@@ -41,7 +41,17 @@ test("urlAllowed", () => {
   assert.equal(check("https://example.org/x.csv"), true);
   assert.equal(check("https://example.org.evil.org/x.csv"), false);
   assert.equal(check("https://evil.org/x.csv"), false);
-  assert.equal(check("//data.org/x.csv"), false); // refused by the server too
+  // Scheme-relative URLs are fetched with the page's scheme, so a host on
+  // the allowlist is fine (as on the server, since #17)
+  assert.equal(check("//data.org/x.csv"), true);
+  assert.equal(check("//evil.example/x"), false);
+  // Parsed the way the browser will fetch them (spec.normalize_url)
+  assert.equal(check("/\\evil.example/x"), false); // backslash: //evil.example
+  assert.equal(check(" //evil.example/x"), false); // leading space stripped
+  assert.equal(check("\t/\\data.org/x"), true);
+  assert.equal(check("\u0000//evil.example/x"), false); // control character stripped
+  assert.equal(check("/\\site.test/x"), true); // this site
+  assert.equal(check("javascript://data.org/%0aalert(1)"), false);
   assert.equal(check("/\\evil.org/x.csv"), false); // browsers read this as //evil.org
   assert.equal(check("data:text/csv,a"), false);
   assert.equal(check("javascript:alert(1)"), false);

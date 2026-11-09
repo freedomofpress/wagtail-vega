@@ -66,19 +66,21 @@
   // -- Data -------------------------------------------------------------------
 
   /** Mirrors wagtail_vega.spec.host_allowed, applied to the URL the browser
-   * will actually fetch: same-origin URLs are allowed, absolute ones must be
-   * http(s) on an allowed host. Protocol-relative URLs are refused, as on the
-   * server. */
+   * will actually fetch. `new URL(raw, base)` parses it as the browser does
+   * (stripping control characters and spaces, reading backslashes as
+   * slashes, resolving scheme-relative URLs), which is what the server's
+   * normalize_url() copies. The result must be http(s), and on this origin
+   * or an allowed host. `allowedHosts` is conf.get_allowed_hosts(). */
   function urlAllowed(raw, allowedHosts, base) {
-    if (typeof raw !== "string" || !raw.trim() || raw.startsWith("//")) return false;
+    if (typeof raw !== "string" || !raw.trim()) return false;
     let url;
     try {
       url = new URL(raw, base);
     } catch {
       return false;
     }
-    if (url.origin === new URL(base).origin) return true;
     if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+    if (url.origin === new URL(base).origin) return true;
     const host = url.hostname.toLowerCase();
     return allowedHosts.some((pattern) => {
       pattern = String(pattern).toLowerCase();
@@ -101,6 +103,17 @@
     );
   }
 
+  /** Datasets a ChartBlock subclass adds in code (extra_dataset_names),
+   * which chart-block.js puts on the block. They have no rows here. */
+  function extraDatasetNames(launcher) {
+    try {
+      const names = JSON.parse(launcher.closest("[data-wagtail-vega-extra-datasets]")?.dataset.wagtailVegaExtraDatasets || "[]");
+      return Array.isArray(names) ? names.filter((n) => typeof n === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+
   /** The spec field's chart: its datasets field and theme field, if any. */
   function chartContext(launcher) {
     const boundary = launcher.closest(BOUNDARY)?.parentElement?.closest(BOUNDARY);
@@ -108,6 +121,7 @@
       textarea: launcher.textarea,
       dataField: boundary ? ownField(boundary, "data") : null,
       themeField: boundary ? ownField(boundary, "theme") : null,
+      extraNames: extraDatasetNames(launcher),
     };
   }
 
@@ -299,8 +313,10 @@
 
   /** One opening of the lightbox for one spec field. */
   class Session {
-    constructor(launcher, textarea, datasets, themeField) {
+    constructor(launcher, textarea, datasets, themeField, extraNames = []) {
       this.launcher = launcher;
+      // Datasets from code: listed, but there are no rows to build from
+      this.extraNames = extraNames.filter((name) => !datasets.some((d) => d.name === name));
       this.trigger = launcher.button;
       this.textarea = textarea;
       this.datasets = datasets;
@@ -526,8 +542,13 @@
       this.dialog = this.buildDialog();
       const select = this.$("[data-dataset]");
       for (const dataset of this.datasets) select.add(new Option(dataset.name, dataset.name));
+      for (const name of this.extraNames) {
+        const option = new Option(t("codeDataset", { name }), name);
+        option.disabled = true;
+        select.add(option);
+      }
       select.value = this.datasetName;
-      this.$("[data-dataset-picker]").hidden = this.datasets.length < 2;
+      this.$("[data-dataset-picker]").hidden = this.datasets.length + this.extraNames.length < 2;
       select.addEventListener("change", () => this.switchDataset(select.value));
 
       const scheme = this.$("[data-scheme]");
@@ -597,9 +618,11 @@
         this.state = state;
         this.original = this.spec.toSpec(state, this.datasetName);
         this.setNotice(
-          this.missingDataset
-            ? t("openedMissing", { missing: this.missingDataset, name: this.datasetName })
-            : t("opened"),
+          !this.missingDataset
+            ? t("opened")
+            : this.extraNames.includes(this.missingDataset)
+              ? t("openedCode", { missing: this.missingDataset, name: this.datasetName })
+              : t("openedMissing", { missing: this.missingDataset, name: this.datasetName }),
         );
       } else {
         this.state = this.spec.initialState(this.columns);
@@ -1184,7 +1207,7 @@
     }
 
     open() {
-      const { textarea, dataField, themeField } = chartContext(this);
+      const { textarea, dataField, themeField, extraNames } = chartContext(this);
       if (!textarea || !dataField) return this.refresh();
       if (!admin.chartSpec) return this.note(t("note.scripts"));
       const datasets = readDatasets(dataField);
@@ -1193,7 +1216,7 @@
         return;
       }
       this.note("");
-      new Session(this, textarea, datasets, themeField).open();
+      new Session(this, textarea, datasets, themeField, extraNames).open();
     }
   }
 

@@ -318,6 +318,7 @@ def test_template_strings_are_translatable(vega_settings, vl_bar):
     assert "~Chart data" in html
     assert "~This chart needs JavaScript to display." in html
     assert "~Showing 1 of 2 rows." in html
+    assert 'data-error-message="~Sorry, this chart couldn' in html
 
 
 def test_fallback_table_truncation_and_disable(vega_settings, vl_bar):
@@ -449,3 +450,223 @@ def test_dataset_url_accepts_relative_paths(vega_settings, url, ok):
     else:
         with pytest.raises(StructBlockValidationError):
             block.clean(value)
+
+
+# -- Editor experience --------------------------------------------------------
+
+
+def test_empty_spec_field_is_empty_not_null():
+    """A new chart's spec editor starts empty (showing its placeholder), not
+    with the JSON text "null"."""
+    block = SpecBlock()
+    assert not block.get_form_state(None)  # was "null"
+    assert not block.get_form_state(block.get_default())
+    assert block.field.prepare_value(None) == ""
+
+
+def test_spec_and_paste_editors_have_example_placeholders(vl_bar):
+    from django.utils.html import escape
+
+    from wagtail_vega.blocks import PASTE_PLACEHOLDER, SPEC_PLACEHOLDER
+
+    html = SpecBlock().field.widget.render("spec", None)
+    assert f'placeholder="{escape(SPEC_PLACEHOLDER)}"' in html
+    # The example is a valid spec that loads a dataset called "source"
+    example = json.loads(str(SPEC_PLACEHOLDER).split("\n", 2)[2])
+    assert SpecBlock().clean(example) == example
+    assert example["data"] == {"name": "source"}
+    assert "placeholder" not in SpecBlock(placeholder="").field.widget.attrs
+
+    paste = DatasetBlock().child_blocks["paste"]
+    assert paste.label == "Pasted data"
+    assert f'placeholder="{escape(PASTE_PLACEHOLDER)}"' in paste.field.widget.render("p", "")
+
+
+def test_spec_must_only_load_the_charts_datasets(vl_bar):
+    block = ChartBlock()
+    assert block.clean(chart_value(block, vl_bar, [("source", "csv", "a\n1")]))
+
+    with pytest.raises(StructBlockValidationError) as exc:
+        block.clean(chart_value(block, vl_bar))
+    [message] = exc.value.block_errors["spec"].messages
+    # Prefixed with the path, so the code editor underlines the name
+    assert message == 'data.name: This chart has no dataset called "source". Add one under Data.'
+
+    with pytest.raises(StructBlockValidationError) as exc:
+        block.clean(chart_value(block, vl_bar, [("sales", "csv", "a\n1"), ("x", "csv", "a\n1")]))
+    assert exc.value.block_errors["spec"].messages == [
+        'data.name: This chart has no dataset called "source". Use one of its datasets '
+        "(sales, x), or add one under Data."
+    ]
+
+    # Data in the spec itself is fine
+    vl_bar["data"] = {"values": [{"a": "x", "b": 1}]}
+    assert block.clean(chart_value(block, vl_bar))
+
+
+def test_chart_block_admin_adapter():
+    from wagtail.admin.telepath import JSContext
+
+    ctx = JSContext()
+    packed = ctx.pack(ChartBlock())
+    assert "wagtail_vega/admin/chart-block.js" in str(ctx.media)
+    assert packed["_type"] == "wagtail_vega.blocks.ChartBlock"
+    meta = packed["_args"][2]
+    assert set(meta["wagtailVega"]["missingDataset"]) == {"none", "some"}
+    assert meta["description"]
+    # Subclasses, including ones with data from code, get it too
+    assert JSContext().pack(DonationsChartBlock())["_type"] == "wagtail_vega.blocks.ChartBlock"
+
+
+# -- Reader experience --------------------------------------------------------
+
+
+def test_fallback_table_marks_numeric_columns(vega_settings, vl_bar):
+    block = ChartBlock()
+    rows = [{"a": "x", "b": 1, "c": True}, {"a": "y", "c": False}]
+    value = chart_value(block, vl_bar, [("source", "json", rows)])
+    [table] = block.build_chart(value).tables
+    assert [c["numeric"] for c in table["head"]] == [False, True, False]
+    assert table["cells"][0][1] == {"value": 1, "numeric": True}
+    assert table["rows"] == [["x", 1, True], ["y", None, False]]  # unchanged
+
+    html = block.render(value)
+    assert '<th scope="col" class="is-numeric">b</th>' in html
+    assert '<td class="is-numeric">1</td>' in html
+    assert '<th scope="col">a</th>' in html
+    assert '<div class="wagtail-vega__table">' in html
+
+
+def test_messages_for_readers(vega_settings, vl_bar):
+    block = ChartBlock()
+    value = chart_value(block, vl_bar, [("source", "csv", "a\n1")])
+    html = block.render(value)
+    assert "This chart needs JavaScript to display. Its data is under “Chart data” below." in html
+    assert (
+        'data-error-message="Sorry, this chart couldn&#x27;t be displayed. Its data is under '
+        '“Chart data” below."' in html
+    )
+
+    vega_settings["FALLBACK_TABLE"] = False
+    html = block.render(value)
+    assert "This chart needs JavaScript to display.</p>" in html
+    assert 'data-error-message="Sorry, this chart couldn&#x27;t be displayed."' in html
+
+
+@pytest.mark.parametrize(
+    "url", ["/\\evil.example/x.csv", " //evil.example/x.csv", "/\t/evil.example/x"]
+)
+def test_dataset_url_rejects_urls_browsers_resolve_elsewhere(vega_settings, url):
+    vega_settings["ALLOWED_DATA_HOSTS"] = ["ok.org"]
+    block = DatasetBlock()
+    with pytest.raises(StructBlockValidationError):
+        block.clean(block.to_python({"name": "s", "source_type": "url", "url": url}))
+
+
+# -- The site's own hosts (#5) --------------------------------------------------
+
+
+@pytest.fixture
+def own_site(db, settings):
+    from wagtail.models import Site
+
+    settings.WAGTAILADMIN_BASE_URL = "https://admin.example.org"
+    site = Site.objects.get(is_default_site=True)
+    site.hostname = "www.example.org"
+    site.save()
+    Site.objects.create(hostname="localhost", port=8001, root_page=site.root_page)
+    return site
+
+
+def test_site_hosts(own_site):
+    from wagtail_vega.conf import get_allowed_hosts, site_hosts
+
+    assert site_hosts() == ["admin.example.org", "www.example.org"]  # no localhost
+    assert set(get_allowed_hosts()) >= {"admin.example.org", "www.example.org"}
+
+
+def test_own_site_absolute_urls_are_allowed(own_site, vega_settings, vl_bar):
+    vl_bar["data"] = {"url": "https://www.example.org/media/data.csv"}
+    assert SpecBlock().clean(vl_bar)
+    vl_bar["data"] = {"url": "http://localhost/data.csv"}
+    with pytest.raises(ValidationError, match="localhost"):
+        SpecBlock().clean(vl_bar)
+    block = DatasetBlock()
+    url = "https://admin.example.org/media/d.csv"
+    assert block.clean(block.to_python({"name": "s", "source_type": "url", "url": url}))
+
+
+def test_own_site_hosts_reach_the_browser(own_site, vega_settings, vl_bar):
+    block = ChartBlock()
+    chart = block.build_chart(chart_value(block, vl_bar))
+    assert "www.example.org" in chart.payload["allowedHosts"]
+
+
+def test_blocked_urls_from_code_are_logged(vega_settings, vl_bar, caplog):
+    from wagtail_vega.spec import remote_data
+
+    class FromAPI(BaseChartBlock):
+        def get_datasets(self, value, context=None):
+            return {
+                "source": remote_data("https://api.elsewhere.example/rows.csv"),
+                "local": remote_data("/media/rows.csv"),
+            }
+
+    block = FromAPI()
+    block.build_chart(block.to_python({"spec": vl_bar}))
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert "FromAPI.get_datasets()" in warnings[0] and "api.elsewhere.example" in warnings[0]
+
+
+# -- Embed options (#2) ---------------------------------------------------------
+
+
+def test_embed_options_merge_over_defaults(vega_settings, vl_bar):
+    vega_settings["EMBED_OPTIONS"] = {"renderer": "canvas"}
+    block = ChartBlock()
+    options = block.build_chart(chart_value(block, vl_bar)).embed_options
+    assert options["renderer"] == "canvas"
+    assert options["actions"] is False  # default kept
+    assert options["defaultStyle"] is False
+    assert options["tooltip"] == {"disableDefaultStyle": True}
+
+
+def test_tooltip_options_are_kept(vega_settings, vl_bar):
+    class Custom(ChartBlock):
+        class Meta:
+            embed_options = {"tooltip": {"offsetX": 20, "theme": "custom"}, "actions": True}
+
+    block = Custom()
+    options = block.build_chart(chart_value(block, vl_bar)).embed_options
+    assert options["tooltip"] == {"offsetX": 20, "theme": "custom", "disableDefaultStyle": True}
+    assert options["actions"] is True
+
+
+def test_tooltips_can_be_turned_off(vega_settings, vl_bar):
+    vega_settings["EMBED_OPTIONS"] = {"tooltip": False}
+    block = ChartBlock()
+    assert block.build_chart(chart_value(block, vl_bar)).embed_options["tooltip"] is False
+
+
+def test_subclasses_can_add_dataset_names(vl_bar):
+    """A ChartBlock subclass that adds datasets from code declares their names,
+    so specs loading them pass validation, on save and in the editor."""
+    from wagtail.admin.telepath import JSContext
+
+    class WithLookup(ChartBlock):
+        extra_dataset_names = ("regions",)
+
+        def get_datasets(self, value, context=None):
+            return {**super().get_datasets(value, context), "regions": [{"id": 1}]}
+
+    spec = {
+        **vl_bar,
+        "transform": [{"lookup": "a", "from": {"data": {"name": "regions"}, "key": "id"}}],
+    }
+    block = WithLookup()
+    assert block.clean(chart_value(block, spec, [("source", "csv", "a\n1")]))
+    with pytest.raises(StructBlockValidationError):
+        ChartBlock().clean(chart_value(ChartBlock(), spec, [("source", "csv", "a\n1")]))
+    meta = JSContext().pack(block)["_args"][2]
+    assert meta["wagtailVega"]["extraDatasetNames"] == ["regions"]

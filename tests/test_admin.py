@@ -45,7 +45,12 @@ def dataset(name="source", source_type="paste", paste="", document="", url="", f
     }
 
 
-def chart(spec=BAR, data=(), description="", caption="", theme=""):
+SOURCE = "quarter\trequests\nQ1\t1,200\nQ2\t950"
+
+
+def chart(spec=BAR, data=None, description="", caption="", theme=""):
+    if data is None:  # the dataset BAR loads
+        data = [dataset(paste=SOURCE)]
     return {
         "spec": json.dumps(spec) if isinstance(spec, dict) else spec,
         "data": list_block(list(data)),
@@ -118,6 +123,11 @@ def test_create_and_serve_chart_page(admin_client, add_url):
             "Dataset names must be unique",
         ),
         (chart(data=[dataset(name="has space", paste="a\n1")]), "Use letters, numbers"),
+        (chart(data=[]), 'This chart has no dataset called "source". Add one under Data.'),
+        (
+            chart(data=[dataset(name="sales", paste="a\n1")]),
+            'This chart has no dataset called "source". Use one of its datasets (sales)',
+        ),
     ],
 )
 def test_validation_errors_are_shown(admin_client, add_url, block, message):
@@ -126,7 +136,10 @@ def test_validation_errors_are_shown(admin_client, add_url, block, message):
     assert not ChartPage.objects.exists()
     # Block errors are passed to the StreamField JS as JSON, so quotes and
     # apostrophes may be escaped.
-    content = response.content.decode().replace("\\u0027", "'").replace("&#x27;", "'")
+    content = response.content.decode()
+    for escaped, char in [("\\u0027", "'"), ("&#x27;", "'"), ("\\u0022", '"'), ("&quot;", '"')]:
+        content = content.replace(escaped, char)
+    content = content.replace('\\"', '"')
     assert message in content
 
 
@@ -178,3 +191,57 @@ def test_preview_renders_chart(admin_client, add_url):
     html = admin_client.get(preview_url).content.decode()
     assert "<wagtail-vega-chart" in html and "Preview me" in html
     assert '"Q9"' in html
+
+
+# -- Wagtail API (#9) -------------------------------------------------------------
+
+
+def test_api_representation(client, home):
+    import datetime
+    from decimal import Decimal
+
+    from tests.testapp.models import Donation
+
+    Donation.objects.create(month=datetime.date(2026, 1, 1), total=Decimal("12.50"))
+    donations_spec = {**BAR, "data": {"name": "donations"}}
+    page = home.add_child(
+        instance=ChartPage(
+            title="API",
+            slug="api",
+            body=[
+                (
+                    "chart",
+                    {
+                        "spec": BAR,
+                        "data": [
+                            {
+                                "name": "source",
+                                "source_type": "paste",
+                                "paste": "quarter,requests\nQ1,5",
+                            }
+                        ],
+                        "description": "Requests",
+                        "caption": "FOIA logs",
+                        "theme": "",
+                    },
+                ),
+                ("donations_chart", {"spec": donations_spec, "description": "", "caption": ""}),
+            ],
+        )
+    )
+    response = client.get(f"/api/v2/pages/{page.pk}/")
+    assert response.status_code == 200
+    chart, donations = (block["value"] for block in response.json()["body"])
+
+    # The final spec, ready for vega-embed: data injected, theme merged
+    assert chart["kind"] == "vega-lite"
+    assert chart["spec"]["datasets"]["source"] == [{"quarter": "Q1", "requests": 5}]
+    assert chart["spec"]["config"]["font"] == "Georgia, serif"  # the test project's theme
+    assert chart["darkConfig"]["axis"]["labelColor"] == "#ddd"
+    assert chart["embed"]["defaultStyle"] is False
+    assert chart["description"] == "Requests" and chart["caption"] == "FOIA logs"
+    assert "vega.github.io" in chart["allowedHosts"]
+    # Data from code, JSON-encoded the same way as on the page
+    assert donations["spec"]["datasets"]["donations"] == [{"month": "2026-01-01", "total": 12.5}]
+    # The raw editor input isn't exposed
+    assert "paste" not in json.dumps(chart)

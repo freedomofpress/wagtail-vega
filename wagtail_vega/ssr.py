@@ -14,9 +14,9 @@ from urllib.parse import urlsplit
 
 from django.core.cache import cache
 
-from .conf import get_setting
+from .conf import get_allowed_hosts, get_setting
 from .encoders import VegaJSONEncoder
-from .spec import VEGA_LITE, host_allowed, iter_urls
+from .spec import VEGA_LITE, host_allowed, iter_urls, normalize_url
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +35,10 @@ def allowed_base_urls(spec: Any) -> list[str]:
     """Base URLs vl-convert may fetch from: only the literal, allowlisted
     absolute URLs in the spec. Everything else (including relative URLs and
     URLs built from signals) is blocked."""
-    allowed = get_setting("ALLOWED_DATA_HOSTS")
+    allowed = get_allowed_hosts()
     bases = set()
     for url in iter_urls(spec):
-        parts = urlsplit(url)
+        parts = urlsplit(normalize_url(url))
         if parts.netloc and host_allowed(url, allowed):
             bases.add(f"{parts.scheme}://{parts.netloc}/")
     return sorted(bases)
@@ -57,7 +57,7 @@ def render_svg(spec: dict, kind: str, vega_theme: str | None = None) -> str | No
         logger.warning("wagtail-vega SSR is enabled but vl-convert is not installed")
         return None
 
-    relative = [u for u in iter_urls(spec) if not urlsplit(u).netloc]
+    relative = [u for u in iter_urls(spec) if not urlsplit(normalize_url(u)).netloc]
     if relative:
         # vl-convert has no base URL to resolve these against, and fetching
         # our own site mid-request could deadlock a single-threaded server.

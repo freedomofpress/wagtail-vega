@@ -2,10 +2,12 @@ import pytest
 
 from wagtail_vega.spec import (
     SpecError,
+    dataset_references,
     deep_merge,
     disallowed_urls,
     host_allowed,
     inject_datasets,
+    normalize_url,
     remote_data,
     spec_kind,
 )
@@ -114,3 +116,64 @@ def test_remote_data_infers_format(url, fmt, expected):
     ref = remote_data(url, fmt)
     assert ref["url"] == url
     assert ref.get("format") == expected
+
+
+# Must match datasetReferences in chart-block.js (tests/js/chart-block.test.mjs)
+def test_dataset_references_vega_lite(vl_bar):
+    assert dataset_references(vl_bar) == [(("data", "name"), "source")]
+    spec = {
+        "$schema": VL,
+        "datasets": {"own": [{"a": 1}]},
+        "layer": [
+            {"data": {"name": "source", "format": {"type": "csv"}}, "mark": "bar"},
+            {"data": {"name": "own"}, "mark": "rule"},
+            {"data": {"url": "x.csv"}, "mark": "point"},
+            {
+                "mark": "line",
+                "transform": [{"lookup": "id", "from": {"data": {"name": "extra"}, "key": "id"}}],
+                # Inline rows are data, not spec
+                "data": {"values": [{"data": {"name": "nope"}}]},
+            },
+        ],
+    }
+    assert dataset_references(spec) == [
+        (("layer", 0, "data", "name"), "source"),
+        (("layer", 3, "transform", 0, "from", "data", "name"), "extra"),
+    ]
+
+
+def test_dataset_references_vega(vg_bar):
+    # "source" has values and "filtered" a source: neither comes from outside
+    assert dataset_references(vg_bar) == []
+    vg_bar["data"][0] = {"name": "source"}
+    vg_bar["data"].append({"name": "seq", "transform": [{"type": "sequence", "start": 0}]})
+    assert dataset_references(vg_bar) == [(("data", 0, "name"), "source")]
+
+
+@pytest.mark.parametrize("spec", [None, [], {}, {"data": {"name": "x"}}, {"$schema": "x"}])
+def test_dataset_references_without_a_known_schema(spec):
+    assert dataset_references(spec) == []
+
+
+@pytest.mark.parametrize(
+    "url,normalized",
+    [
+        ("/\\evil.example/x.csv", "//evil.example/x.csv"),
+        ("\\\\evil.example/x", "//evil.example/x"),
+        ("/\t/evil.example/x", "//evil.example/x"),
+        (" //evil.example/x", "//evil.example/x"),
+        ("\n\x00/media/x.csv \x1f", "/media/x.csv"),
+        ("https://ok.org/a b", "https://ok.org/a b"),  # inner spaces stay
+    ],
+)
+def test_normalize_url_matches_browsers(url, normalized):
+    assert normalize_url(url) == normalized
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["/\\evil.example/x.csv", "\\\\evil.example/x", "/\t/evil.example/x", " //evil.example/x"],
+)
+def test_host_allowed_sees_through_browser_quirks(url):
+    assert not host_allowed(url, ["ok.org"])
+    assert host_allowed(url, ["evil.example"])

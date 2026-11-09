@@ -11,7 +11,7 @@ from wagtail.admin.telepath import register
 from wagtail.admin.telepath.widgets import WidgetAdapter
 
 from .builder_strings import builder_strings
-from .conf import get_setting
+from .conf import get_allowed_hosts, get_setting
 from .encoders import VegaJSONEncoder
 from .themes import get_themes
 
@@ -106,7 +106,7 @@ class CodeEditor(forms.Textarea):
         return {
             "rowsUrl": reverse("wagtail_vega_document_rows"),
             "validateUrl": reverse("wagtail_vega_validate_spec"),
-            "allowedHosts": list(get_setting("ALLOWED_DATA_HOSTS")),
+            "allowedHosts": get_allowed_hosts(),
             "themes": themes,
             "defaultTheme": get_setting("DEFAULT_THEME") or None,
             "embedOptions": get_setting("EMBED_OPTIONS"),

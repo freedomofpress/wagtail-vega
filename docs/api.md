@@ -15,7 +15,7 @@ This reference is generated from the code's docstrings. The guides explain how t
    See :doc:`adding-charts`.
 
 .. autoclass:: wagtail_vega.blocks.BaseChartBlock
-   :members: field_order, get_spec_source, get_datasets, get_theme, get_embed_options, get_spec, use_ssr, use_fallback_table, build_chart, get_context
+   :members: field_order, get_spec_source, get_datasets, get_theme, get_embed_options, get_spec, use_ssr, use_fallback_table, build_chart, check_remote_datasets, get_api_representation, get_context
    :undoc-members:
 
    Fields: ``spec``, ``description`` and ``caption``. See :doc:`custom-data`.
@@ -73,7 +73,7 @@ The editor follows, as one change that can be undone. The editor also fires `inp
 
 ```{eval-rst}
 .. automodule:: wagtail_vega.spec
-   :members: SpecError, spec_kind, inject_datasets, remote_data, is_remote, deep_merge, iter_urls, iter_url_paths, host_allowed, disallowed_urls, disallowed_url_paths
+   :members: SpecError, spec_kind, inject_datasets, remote_data, is_remote, deep_merge, iter_urls, iter_url_paths, normalize_url, host_allowed, disallowed_urls, disallowed_url_paths
 ```
 
 ## Validation
@@ -101,7 +101,7 @@ The editor follows, as one change that can be undone. The editor also fires `inp
 
 ```{eval-rst}
 .. automodule:: wagtail_vega.conf
-   :members: get_setting
+   :members: get_setting, get_allowed_hosts, site_hosts
 ```
 
 ## Template tags

@@ -49,6 +49,8 @@ Blocks render with `wagtail_vega/chart.html`. Its context has:
 `chart`
 : A {py:class}`~wagtail_vega.blocks.Chart`, with `id`, `kind` (`"vega"` or `"vega-lite"`), `spec`, `embed_options`, `description`, `caption`, `dark_config`, `fallbacks`, `svg` (the server-rendered SVG, or `None`), `tables`, and `payload_script` (the payload's `<script>` tag).
 
+  Each table in `tables` has `name`, `columns`, `rows` (lists of values), `truncated` and `total`. It also has `head` (`{"name", "numeric"}` for each column) and `cells` (rows of `{"value", "numeric"}`), for templates that treat columns of numbers differently; the default template right-aligns them.
+
 `value`, `self`
 : The block's value, as for any block.
 
@@ -58,14 +60,15 @@ The template outputs:
 
 ```html
 <figure class="wagtail-vega" id="wagtail-vega-1a2b3c4d" aria-describedby="wagtail-vega-1a2b3c4d-description">
-    <wagtail-vega-chart class="wagtail-vega__chart" data-payload="wagtail-vega-1a2b3c4d-payload">
+    <script id="wagtail-vega-1a2b3c4d-payload" type="application/json">{"spec": ...}</script>
+    <wagtail-vega-chart class="wagtail-vega__chart" data-payload="wagtail-vega-1a2b3c4d-payload"
+                        data-error-message="Sorry, this chart couldn't be displayed. ...">
         <!-- the server-rendered SVG, or a <noscript> message -->
     </wagtail-vega-chart>
-    <script id="wagtail-vega-1a2b3c4d-payload" type="application/json">{"spec": ...}</script>
     <p class="wagtail-vega__description" id="wagtail-vega-1a2b3c4d-description">...</p>
     <details class="wagtail-vega__data">
         <summary>Chart data</summary>
-        <table>...</table>
+        <div class="wagtail-vega__table"><table>...</table></div>
     </details>
     <figcaption class="wagtail-vega__caption">...</figcaption>
 </figure>
@@ -112,9 +115,11 @@ The default template has no `{% block %}`s, so copy it rather than extending it.
 
 `wagtail-vega.js` defines the `<wagtail-vega-chart>` custom element. When one is added to the page, it reads its payload and renders the chart. It renders again when the colour scheme changes or when asked to refresh. When it's removed from the page, it frees the Vega view.
 
-While it renders, the server-rendered SVG or `<noscript>` message stays in place. Once the chart is drawn and its data has loaded, it replaces them, and the element gets the `is-rendered` class.
+While it renders, the server-rendered SVG or `<noscript>` message stays in place, and the element has `aria-busy="true"`. Once the chart is drawn and its data has loaded, it replaces them, and the element gets the `is-rendered` class.
 
-If rendering fails, the element gets the `has-error` class, logs the error to the console, and fires `wagtail-vega:error`. That covers an invalid spec, and also data that fails to load or parse (a missing file, or CSV read as JSON). If the spec was invalid, the element keeps its previous content. If only the data failed, the chart's axes and frame are drawn without data.
+Until then, `wagtail-vega.css` gives the element a minimum height, so the text below doesn't move down when the chart appears. It's 20rem by default; set `--wagtail-vega-loading-height` to suit your charts, or to `0` to turn it off. There's no minimum height when JavaScript is off, or when a server-rendered SVG is showing.
+
+If rendering fails, the element gets the `has-error` class, logs the error to the console, and fires `wagtail-vega:error`. Unless a server-rendered SVG is still showing, it also adds a `<p class="wagtail-vega__error">` with the text of its `data-error-message` attribute, so readers know something is missing: "Sorry, this chart couldn't be displayed.", followed by "Its data is under “Chart data” below." when there's a data table. The message is removed if the chart later renders. That covers an invalid spec, and also data that fails to load or parse (a missing file, or CSV read as JSON). If the spec was invalid, the element keeps its previous content. If only the data failed, the chart's axes and frame are drawn without data.
 
 The element has:
 
@@ -184,11 +189,33 @@ Charts work in content added to the page later, for example with htmx, Turbo or 
 
 The `EMBED_OPTIONS` setting and the block's `embed_options` option are passed to [vega-embed](https://github.com/vega/vega-embed#options). wagtail-vega always sets some options itself:
 
-- `defaultStyle: false` and `tooltip: {"disableDefaultStyle": true}`, so vega-embed doesn't add `<style>` elements. Tooltip styles ship in `wagtail-vega.css` instead. As a result, vega-tooltip options can't be set through `embed_options`.
+- `defaultStyle: false`, and `disableDefaultStyle: true` in the tooltip options, so vega-embed and vega-tooltip don't add `<style>` elements. Their styles ship in `wagtail-vega.css` instead, including the actions menu's. Other [vega-tooltip options](https://github.com/vega/vega-tooltip/blob/main/docs/APIs.md#options) given as a dict are kept, and `"tooltip": False` turns tooltips off. Unless you set the tooltip `theme`, it follows the chart's colour scheme (`"light"` or `"dark"`).
 - `loader`, to the restricted data loader (see {doc}`security`).
 - `theme`, when the chart's theme uses a built-in vega-embed theme.
 - `ast` and `expr`, in CSP-safe mode.
 
+The options are merged in this order, each over the last: the defaults (`{"actions": False, "renderer": "svg"}`), the `EMBED_OPTIONS` setting, and the block's `embed_options`.
+
 :::{warning}
-`EMBED_OPTIONS` replaces the default, `{"actions": False, "renderer": "svg"}`, rather than adding to it. If you set it, include `"actions": False` unless you want vega-embed's actions menu. The menu's styles are part of vega-embed's default style, which wagtail-vega turns off, so it appears unstyled unless you style it yourself.
+vega-embed's actions menu (`"actions": True`) includes **Open in Vega Editor**, which sends the chart's spec, data included, to the Vega Editor at vega.github.io. If charts may hold unpublished data, leave actions off, or pick the ones you want: `"actions": {"export": True, "source": False, "compiled": False, "editor": False}`.
 :::
+
+## The Wagtail API
+
+Chart blocks implement `get_api_representation()`, so [Wagtail's API](https://docs.wagtail.org/en/stable/advanced_topics/api/) returns something a headless frontend can render, rather than the editor's raw input:
+
+```json
+{
+  "kind": "vega-lite",
+  "spec": {"$schema": "…", "datasets": {"source": [{"quarter": "Q1", "requests": 5}]}, "config": {"font": "…"}},
+  "darkConfig": {"font": "…", "axis": {"labelColor": "#ddd"}},
+  "embed": {"actions": false, "renderer": "svg", "defaultStyle": false, "tooltip": {"disableDefaultStyle": true}},
+  "fallbacks": {"--brand": "#c0392b"},
+  "allowedHosts": ["vega.github.io"],
+  "cspSafe": false,
+  "description": "Requests per quarter",
+  "caption": "Source: FOIA logs"
+}
+```
+
+That's the same payload `<wagtail-vega-chart>` reads, plus the description and caption. Render it with vega-embed: use `darkConfig` as the spec's `config` in dark mode, resolve any `var(--…)` strings (or replace them with `fallbacks`), and keep data loading to `allowedHosts`, as `wagtail-vega.js` does.

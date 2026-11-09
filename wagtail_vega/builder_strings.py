@@ -23,6 +23,7 @@ def builder_strings() -> dict[str, str]:
         # The lightbox
         "title": _("Build a chart from data"),
         "dataset": _("Dataset"),
+        "codeDataset": _("%(name)s (from code, can't be previewed here)"),
         "close": _("Close without using the chart"),
         "problem": _("The builder can't open the spec that's in the field: %(problem)s."),
         "problemHelp": _(
@@ -187,6 +188,11 @@ def builder_strings() -> dict[str, str]:
         "openedMissing": _(
             "Opened the field's chart. It used the dataset “%(missing)s”, which this chart "
             "doesn't have, so it now uses “%(name)s”."
+        ),
+        "openedCode": _(
+            "Opened the field's chart. It uses “%(missing)s”, whose data comes from code and "
+            "can't be previewed here, so the builder shows it with “%(name)s”. Using the chart "
+            "switches it to “%(name)s”."
         ),
         "started": _("Started from a suggested chart. Change anything below."),
         "startedFresh": _("Started a new chart from a suggestion."),
