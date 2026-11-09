@@ -106,3 +106,13 @@ Some logic exists in both Python and JavaScript, and must be changed in both pla
 - `var()` resolution: `wagtail_vega/themes.py` and `static/wagtail_vega/wagtail-vega.js`.
 
 When you change behaviour, update the documentation in `docs/` and add an entry to {doc}`changelog`.
+
+## Translations
+
+User-facing strings in Python and templates are marked for translation. To start a translation, run this from the `wagtail_vega` directory (it needs GNU gettext):
+
+```sh
+django-admin makemessages -l de
+```
+
+Then translate `wagtail_vega/locale/de/LC_MESSAGES/django.po`, compile it with `django-admin compilemessages`, and open a pull request.

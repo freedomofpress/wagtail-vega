@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Iterator, Mapping
+from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -59,10 +60,21 @@ def _walk(node: Any) -> Iterator[tuple[str | None, Any, Any]]:
             stack.extend((None, v, value) for v in value)
 
 
+FORMAT_EXTENSIONS = {".csv": "csv", ".tsv": "tsv", ".json": "json"}
+
+
 def remote_data(url: str, fmt: str | None = None) -> dict[str, Any]:
-    """A remote dataset: ``{"url": url}``, plus ``{"format": {"type": fmt}}``
-    if ``fmt`` (e.g. ``"csv"``) is given. Return these from
-    ``BaseChartBlock.get_datasets()`` to have the browser load the data."""
+    """A remote dataset: ``{"url": url, "format": {"type": fmt}}``. Return
+    these from ``BaseChartBlock.get_datasets()`` to have the browser load the
+    data.
+
+    If ``fmt`` isn't given, it's inferred from the URL's extension (``.csv``,
+    ``.tsv``, ``.json``). Vega, unlike Vega-Lite, would otherwise read every
+    URL as JSON. With no known extension, the format is left unset.
+    """
+    if not fmt:
+        suffix = PurePosixPath(urlsplit(url).path).suffix.lower()
+        fmt = FORMAT_EXTENSIONS.get(suffix)
     ref: dict[str, Any] = {"url": url}
     if fmt:
         ref["format"] = {"type": fmt}

@@ -60,9 +60,9 @@ The template also loads the CSS and JavaScript, once per page, the first time a 
 
 1. reads the payload;
 2. picks the light or dark config, using the page's colour scheme;
-3. resolves `var(--token)` strings in the config from the page's CSS custom properties;
+3. resolves `var(--token)` strings (anywhere but in data) from the page's CSS custom properties;
 4. renders the chart with vega-embed, using a data loader that refuses hosts that aren't allowlisted;
-5. replaces the server-rendered SVG (or the `<noscript>` message), and fires a `wagtail-vega:rendered` event.
+5. once the data has loaded, replaces the server-rendered SVG (or the `<noscript>` message), and fires a `wagtail-vega:rendered` event, or `wagtail-vega:error` if anything failed.
 
 See {doc}`frontend` for the details.
 

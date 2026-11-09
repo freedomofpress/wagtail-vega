@@ -134,10 +134,21 @@ def theme_choices() -> list[tuple[str, str]]:
     return [("", blank), *((name, theme.label) for name, theme in themes.items())]
 
 
+# Keys whose contents are data, which var() resolution leaves alone. The
+# browser applies the same rule (see wagtail-vega.js).
+DATA_KEYS = frozenset({"data", "datasets", "values"})
+
+
 def resolve_css_vars(value: Any, fallbacks: dict[str, str]) -> Any:
-    """Replace ``var(--x)`` strings using ``fallbacks`` (used for SSR)."""
+    """Replace ``var(--x)`` strings using ``fallbacks`` (used for SSR).
+
+    Strings are resolved anywhere in the spec except inside data (``data``,
+    ``datasets`` and ``values``), matching what the browser does.
+    """
     if isinstance(value, dict):
-        return {k: resolve_css_vars(v, fallbacks) for k, v in value.items()}
+        return {
+            k: v if k in DATA_KEYS else resolve_css_vars(v, fallbacks) for k, v in value.items()
+        }
     if isinstance(value, list):
         return [resolve_css_vars(v, fallbacks) for v in value]
     if isinstance(value, str) and "var(" in value:

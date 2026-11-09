@@ -11,3 +11,4 @@ __pycache__/
 /test-results/
 /node_modules/
 /docs/_build/
+/.claude/

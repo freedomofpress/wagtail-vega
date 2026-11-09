@@ -10,5 +10,7 @@ First release.
 - `BaseChartBlock`, for charts with data supplied from code.
 - Themes, with dark mode and CSS custom properties.
 - Data host allowlist, CSP-safe mode and optional server-side rendering.
+- `wagtail-vega:rendered` and `wagtail-vega:error` events; data that fails to load is reported as an error.
+- Translatable chart template text.
 - Supports Wagtail 7.4 LTS and newer.
 - Documentation, built with Sphinx.

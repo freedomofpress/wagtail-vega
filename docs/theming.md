@@ -128,9 +128,7 @@ Because the value comes from the chart element, you can set different values for
 
 When the chart is {doc}`rendered on the server <ssr>`, there's no page CSS, so `var()` is replaced with the `fallbacks` value or the `var()` default. Give every property you use one or the other, or the server-rendered SVG will have an invalid colour until JavaScript runs.
 
-:::{note}
-In the browser, only the `config` is searched for `var()`, whether it came from the theme or the spec. Server-side rendering replaces `var()` anywhere in the spec, but in the browser a `var()` elsewhere in the spec, such as in a mark's `color`, is left as it is. Keep `var()` in the config.
-:::
+`var()` works anywhere in the spec, not just in the config: for example, a mark's `"color": "var(--accent)"`. The only exception is data (anything under `data`, `datasets` or `values`), which is left exactly as it is. The same rule applies in the browser and on the server.
 
 Nested `var()`s, such as `var(--a, var(--b))`, aren't supported.
 

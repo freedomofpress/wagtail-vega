@@ -58,3 +58,18 @@ def test_resolve_css_vars():
     assert resolve_css_vars(value, {"--a": "red"}) == {
         "range": ["red", "#000", "var(--c)", "plain"]
     }
+
+
+def test_resolve_css_vars_leaves_data_alone():
+    spec = {
+        "mark": {"color": "var(--a)"},
+        "data": {"values": [{"label": "var(--a)"}]},
+        "datasets": {"s": [{"label": "var(--a)"}]},
+        "layer": [{"data": {"values": ["var(--a)"]}, "encoding": {"color": {"value": "var(--a)"}}}],
+    }
+    out = resolve_css_vars(spec, {"--a": "red"})
+    assert out["mark"]["color"] == "red"
+    assert out["layer"][0]["encoding"]["color"]["value"] == "red"
+    assert out["data"] == spec["data"]
+    assert out["datasets"] == spec["datasets"]
+    assert out["layer"][0]["data"] == spec["layer"][0]["data"]

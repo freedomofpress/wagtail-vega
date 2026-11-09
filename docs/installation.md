@@ -73,7 +73,7 @@ Render the StreamField with `{% include_block %}`, as you would any other:
 {% endfor %}
 ```
 
-The chart template loads the CSS and JavaScript the first time a chart appears on a page, so pages without charts don't download Vega. To load them only once per page, it uses the `request` in the template context. Wagtail pages have `request` in their context, and `{% include_block %}` passes the context on. Writing `{{ page.body }}` instead doesn't pass the context, so the assets would be output once per chart. See {doc}`frontend` for other ways to load the assets.
+The chart template loads the CSS and JavaScript the first time a chart appears on a page, so pages without charts don't download Vega. To load them only once per page, it uses the `request` in the template context. Wagtail pages have `request` in their context, and `{% include_block %}` passes the context on. Writing `{{ page.body }}` also works, but doesn't pass the context, so each chart includes a small loader script instead, and the libraries only start downloading once the page has been parsed. See {doc}`frontend` for other ways to load the assets.
 
 ### 3. Make a chart
 
