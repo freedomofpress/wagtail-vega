@@ -19,6 +19,7 @@ import collections
 import json
 import secrets
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any
 
 from django import forms
@@ -352,16 +353,33 @@ def build_tables(datasets: dict[str, Any], max_rows: int) -> list[dict]:
         columns: list[str] = []
         for row in rows:
             columns.extend(k for k in row if k not in columns)
+        shown = [[row.get(c) for c in columns] for row in rows[:max_rows]]
+        numeric = [_is_numeric_column([r[i] for r in shown]) for i in range(len(columns))]
         tables.append(
             {
                 "name": name,
                 "columns": columns,
-                "rows": [[row.get(c) for c in columns] for row in rows[:max_rows]],
+                "rows": shown,
+                # As columns and rows, with whether each column holds numbers
+                # (the template right-aligns them, so their digits line up)
+                "head": [{"name": c, "numeric": n} for c, n in zip(columns, numeric, strict=True)],
+                "cells": [
+                    [{"value": v, "numeric": n} for v, n in zip(row, numeric, strict=True)]
+                    for row in shown
+                ],
                 "truncated": len(rows) > max_rows,
                 "total": len(rows),
             }
         )
     return tables
+
+
+def _is_numeric_column(values: list[Any]) -> bool:
+    """Whether every value that isn't blank is a number (not a boolean)."""
+    present = [v for v in values if v is not None and v != ""]
+    return bool(present) and all(
+        isinstance(v, int | float | Decimal) and not isinstance(v, bool) for v in present
+    )
 
 
 class BaseChartBlock(blocks.StructBlock):

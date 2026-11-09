@@ -318,6 +318,7 @@ def test_template_strings_are_translatable(vega_settings, vl_bar):
     assert "~Chart data" in html
     assert "~This chart needs JavaScript to display." in html
     assert "~Showing 1 of 2 rows." in html
+    assert 'data-error-message="~Sorry, this chart couldn' in html
 
 
 def test_fallback_table_truncation_and_disable(vega_settings, vl_bar):
@@ -449,3 +450,38 @@ def test_dataset_url_accepts_relative_paths(vega_settings, url, ok):
     else:
         with pytest.raises(StructBlockValidationError):
             block.clean(value)
+
+
+# -- Reader experience --------------------------------------------------------
+
+
+def test_fallback_table_marks_numeric_columns(vega_settings, vl_bar):
+    block = ChartBlock()
+    rows = [{"a": "x", "b": 1, "c": True}, {"a": "y", "c": False}]
+    value = chart_value(block, vl_bar, [("source", "json", rows)])
+    [table] = block.build_chart(value).tables
+    assert [c["numeric"] for c in table["head"]] == [False, True, False]
+    assert table["cells"][0][1] == {"value": 1, "numeric": True}
+    assert table["rows"] == [["x", 1, True], ["y", None, False]]  # unchanged
+
+    html = block.render(value)
+    assert '<th scope="col" class="is-numeric">b</th>' in html
+    assert '<td class="is-numeric">1</td>' in html
+    assert '<th scope="col">a</th>' in html
+    assert '<div class="wagtail-vega__table">' in html
+
+
+def test_messages_for_readers(vega_settings, vl_bar):
+    block = ChartBlock()
+    value = chart_value(block, vl_bar, [("source", "csv", "a\n1")])
+    html = block.render(value)
+    assert "This chart needs JavaScript to display. Its data is under “Chart data” below." in html
+    assert (
+        'data-error-message="Sorry, this chart couldn&#x27;t be displayed. Its data is under '
+        '“Chart data” below."' in html
+    )
+
+    vega_settings["FALLBACK_TABLE"] = False
+    html = block.render(value)
+    assert "This chart needs JavaScript to display.</p>" in html
+    assert 'data-error-message="Sorry, this chart couldn&#x27;t be displayed."' in html

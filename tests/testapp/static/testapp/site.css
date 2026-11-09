@@ -1,6 +1,6 @@
 :root { --brand: #6a4c93; --chart-bg: #fff; color-scheme: light dark; }
 @media (prefers-color-scheme: dark) {
-  :root { --chart-bg: #1b1b1b; }
+  :root { --brand: #b39ddb; --chart-bg: #1b1b1b; }
   body { background: #121212; color: #eee; }
 }
 body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; }

@@ -83,12 +83,15 @@ WAGTAIL_VEGA = {
             "config": {
                 "font": "Georgia, serif",
                 "background": "var(--chart-bg, white)",
-                "range": {"category": ["var(--brand)", "#2a9d8f", "#e9c46a", "#264653", "#f4a261"]},
+                # Every colour has at least 3:1 contrast with the background
+                # (WCAG 1.4.11), in light and dark mode
+                "range": {"category": ["var(--brand)", "#2a9d8f", "#b45309", "#264653", "#be185d"]},
                 "axis": {"labelColor": "#333", "titleColor": "#333"},
                 "title": {"color": "#111"},
                 "legend": {"labelColor": "#333", "titleColor": "#333"},
             },
             "dark": {
+                "range": {"category": ["var(--brand)", "#4fd1c5", "#f4a261", "#e9c46a", "#93c5fd"]},
                 "axis": {"labelColor": "#ddd", "titleColor": "#ddd", "gridColor": "#444"},
                 "title": {"color": "#fff"},
                 "legend": {"labelColor": "#ddd", "titleColor": "#ddd"},
