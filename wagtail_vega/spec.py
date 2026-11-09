@@ -133,6 +133,64 @@ def inject_datasets(spec: Mapping[str, Any], datasets: Mapping[str, Dataset]) ->
 
 JSONPath = tuple[str | int, ...]
 
+# A data entry with only these keys gets its data from outside the spec
+EXTERNAL_DATA_KEYS = {"name", "format"}
+
+
+def dataset_references(spec: Any) -> list[tuple[JSONPath, str]]:
+    """``(path, name)`` for each dataset the spec expects to be given by name,
+    in document order. ``path`` leads to the ``name`` value.
+
+    Vega-Lite: every ``"data": {"name": ...}``, at any depth (layers, lookups),
+    except names defined in the spec's own top-level ``datasets``.
+
+    Vega: entries of the top-level ``data`` array that have only a ``name``
+    (and maybe a ``format``), with no ``values``, ``url``, ``source`` or
+    transforms of their own.
+
+    Specs without a recognisable ``$schema`` have none.
+    """
+    if not isinstance(spec, Mapping):
+        return []
+    try:
+        kind = spec_kind(spec)
+    except SpecError:
+        return []
+
+    def external(entry: Any) -> bool:
+        return (
+            isinstance(entry, Mapping)
+            and isinstance(entry.get("name"), str)
+            and set(entry) <= EXTERNAL_DATA_KEYS
+        )
+
+    if kind == VEGA:
+        entries = spec.get("data")
+        if not isinstance(entries, list):
+            return []
+        return [(("data", i, "name"), e["name"]) for i, e in enumerate(entries) if external(e)]
+
+    own = spec.get("datasets")
+    own = set(own) if isinstance(own, Mapping) else set()
+    found: list[tuple[JSONPath, str]] = []
+
+    def walk(node: Any, path: JSONPath) -> None:
+        if isinstance(node, Mapping):
+            for key, value in node.items():
+                if key in ("datasets", "values"):
+                    continue  # inline data, not spec
+                if key == "data" and external(value):
+                    if value["name"] not in own:
+                        found.append(((*path, key, "name"), value["name"]))
+                else:
+                    walk(value, (*path, key))
+        elif isinstance(node, list):
+            for i, value in enumerate(node):
+                walk(value, (*path, i))
+
+    walk(spec, ())
+    return found
+
 
 def iter_url_paths(spec: Any, path: JSONPath = ()) -> Iterator[tuple[JSONPath, str]]:
     """Yield ``(path, url)`` for every literal ``url`` string in the spec (data

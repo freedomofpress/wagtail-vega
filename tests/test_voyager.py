@@ -201,7 +201,7 @@ def test_spec_widget_has_voyager_button(vega_settings):
     assert f'data-validate-url="{VALIDATE}"' in html
     assert 'data-allowed-hosts="[&quot;data.example.org&quot;]"' in html
     assert 'name="spec"' in html and "<textarea" in html
-    assert "Build chart with Voyager" in html
+    assert "Build chart from data" in html
 
 
 def test_spec_widget_is_the_code_editor():

@@ -94,3 +94,10 @@ export function loadVoyagerLauncher() {
 // Values created inside a vm context have that context's prototypes, which
 // deepStrictEqual treats as different. Round-trip through JSON to compare.
 export const plain = (value) => JSON.parse(JSON.stringify(value));
+
+/** The chart block's admin script (labels and the dataset name check). */
+export function loadChartBlock() {
+  const registered = {};
+  const window = loadScript("admin/chart-block.js", adminGlobals(registered, { URL }));
+  return { window, registered };
+}

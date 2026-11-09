@@ -452,6 +452,72 @@ def test_dataset_url_accepts_relative_paths(vega_settings, url, ok):
             block.clean(value)
 
 
+# -- Editor experience --------------------------------------------------------
+
+
+def test_empty_spec_field_is_empty_not_null():
+    """A new chart's spec editor starts empty (showing its placeholder), not
+    with the JSON text "null"."""
+    block = SpecBlock()
+    assert not block.get_form_state(None)  # was "null"
+    assert not block.get_form_state(block.get_default())
+    assert block.field.prepare_value(None) == ""
+
+
+def test_spec_and_paste_editors_have_example_placeholders(vl_bar):
+    from django.utils.html import escape
+
+    from wagtail_vega.blocks import PASTE_PLACEHOLDER, SPEC_PLACEHOLDER
+
+    html = SpecBlock().field.widget.render("spec", None)
+    assert f'placeholder="{escape(SPEC_PLACEHOLDER)}"' in html
+    # The example is a valid spec that loads a dataset called "source"
+    example = json.loads(str(SPEC_PLACEHOLDER).split("\n", 2)[2])
+    assert SpecBlock().clean(example) == example
+    assert example["data"] == {"name": "source"}
+    assert "placeholder" not in SpecBlock(placeholder="").field.widget.attrs
+
+    paste = DatasetBlock().child_blocks["paste"]
+    assert paste.label == "Pasted data"
+    assert f'placeholder="{escape(PASTE_PLACEHOLDER)}"' in paste.field.widget.render("p", "")
+
+
+def test_spec_must_only_load_the_charts_datasets(vl_bar):
+    block = ChartBlock()
+    assert block.clean(chart_value(block, vl_bar, [("source", "csv", "a\n1")]))
+
+    with pytest.raises(StructBlockValidationError) as exc:
+        block.clean(chart_value(block, vl_bar))
+    [message] = exc.value.block_errors["spec"].messages
+    # Prefixed with the path, so the code editor underlines the name
+    assert message == 'data.name: This chart has no dataset called "source". Add one under Data.'
+
+    with pytest.raises(StructBlockValidationError) as exc:
+        block.clean(chart_value(block, vl_bar, [("sales", "csv", "a\n1"), ("x", "csv", "a\n1")]))
+    assert exc.value.block_errors["spec"].messages == [
+        'data.name: This chart has no dataset called "source". Use one of its datasets '
+        "(sales, x), or add one under Data."
+    ]
+
+    # Data in the spec itself is fine
+    vl_bar["data"] = {"values": [{"a": "x", "b": 1}]}
+    assert block.clean(chart_value(block, vl_bar))
+
+
+def test_chart_block_admin_adapter():
+    from wagtail.admin.telepath import JSContext
+
+    ctx = JSContext()
+    packed = ctx.pack(ChartBlock())
+    assert "wagtail_vega/admin/chart-block.js" in str(ctx.media)
+    assert packed["_type"] == "wagtail_vega.blocks.ChartBlock"
+    meta = packed["_args"][2]
+    assert set(meta["wagtailVega"]["missingDataset"]) == {"none", "some"}
+    assert meta["description"]
+    # Subclasses, including ones with data from code, get it too
+    assert JSContext().pack(DonationsChartBlock())["_type"] == "wagtail_vega.blocks.ChartBlock"
+
+
 # -- Reader experience --------------------------------------------------------
 
 

@@ -1,4 +1,4 @@
-{% load wagtailadmin_tags %}{% comment %}
+{% load i18n wagtailadmin_tags %}{% comment %}
 The textarea comes first: Wagtail puts the field's attributes (aria-describedby,
 required) on a widget's first element, and the code editor copies them. The
 launcher then moves itself above the textarea, and the code editor inserts
@@ -6,7 +6,7 @@ itself right after it.
 {% endcomment %}{% include "django/forms/widgets/textarea.html" %}{% if voyager %}
 <wagtail-vega-voyager class="wagtail-vega-spec__toolbar" data-for="{{ widget.name }}" data-frame-url="{{ voyager.frame }}" data-rows-url="{{ voyager.rows }}" data-validate-url="{{ voyager.validate }}" data-allowed-hosts="{{ voyager.allowed_hosts }}">
     <button type="button" class="button button-small button-secondary bicolor button--icon" data-voyager-open>
-        <span class="icon-wrapper">{% icon name="wagtail-vega-chart" %}</span>Build chart with Voyager
+        <span class="icon-wrapper">{% icon name="wagtail-vega-chart" %}</span>{% translate "Build chart from data" %}
     </button>
     <p class="wagtail-vega-spec__note" data-voyager-note hidden></p>
 </wagtail-vega-voyager>{% endif %}

@@ -38,6 +38,13 @@
  *   a button can be added next to the field. `textarea.wagtailVegaEditor`
  *   is the editor object (`.focus()`, `.view` for CodeMirror's EditorView).
  *
+ *   `editor.addCheck(fn)` adds a check that runs with the others:
+ *   `fn(parsedJSON)` returns [{path, message}], and each is underlined at
+ *   its path (see chart-block.js). `editor.relint()` runs every check again,
+ *   e.g. when something they depend on changes.
+ *
+ *   The textarea's placeholder attribute is shown while the editor is empty.
+ *
  * Needs vendor/codemirror.js, json-source.js and data-format.js.
  */
 (() => {
@@ -213,6 +220,9 @@
       this.validateUrl = config.validateUrl || null;
       this.CM = CM;
       this.request = null;
+      this.checks = [];
+      this.validated = { text: null, problems: [] };
+      this.placeholder = textarea.getAttribute("placeholder") || "";
 
       const required = textarea.required;
       // A hidden required field would block submission with no visible
@@ -294,6 +304,8 @@
           return { effects: language.reconfigure(want ? jsonLanguage : []) };
         }),
         this.mode === "data" ? [CM.highlightWhitespace(), CM.EditorState.tabSize.of(12)] : [],
+        // The textarea's placeholder, e.g. an example spec, while it's empty
+        this.placeholder && CM.placeholder ? CM.placeholder(this.placeholder) : [],
         CM.linter((view) => this.lint(view), {
           delay: LINT_DELAY,
           needsRefresh: (update) =>
@@ -332,16 +344,67 @@
       if (this.mode === "data") return dataFormat.diagnose(text);
       const syntax = jsonDiagnostics(text);
       if (syntax.length) return syntax;
-      // Unchanged since it was loaded or saved: show the server's errors,
-      // rather than asking it again
-      if (doc === this.saved.doc) return this.saved.diagnostics;
-      if (this.mode !== "spec" || !this.validateUrl) return [];
-      return pathDiagnostics(text, await this.validate(text));
+      let found;
+      if (doc === this.saved.doc) {
+        // Unchanged since it was loaded or saved: show the server's errors,
+        // rather than asking it again
+        found = this.saved.diagnostics;
+      } else if (this.mode === "spec" && this.validateUrl) {
+        found = pathDiagnostics(text, await this.validate(text));
+      } else {
+        found = [];
+      }
+      // Other admin code's checks (see addCheck), unless the server already
+      // reported the same problem
+      const extra = pathDiagnostics(text, this.runChecks(text)).filter(
+        (d) => !found.some((f) => f.from === d.from && f.message === d.message),
+      );
+      return [...found, ...extra];
+    }
+
+    /** Add a check of the parsed JSON, run with the others as you type:
+     * `check(value)` returns [{path, message}] (see chart-block.js). */
+    addCheck(check) {
+      this.checks.push(check);
+      this.relint();
+    }
+
+    runChecks(text) {
+      if (!this.checks.length) return [];
+      let value;
+      try {
+        value = JSON.parse(text);
+      } catch {
+        return [];
+      }
+      return this.checks.flatMap((check) => {
+        try {
+          return check(value) || [];
+        } catch (error) {
+          console.error("wagtail-vega:", error);
+          return [];
+        }
+      });
+    }
+
+    /** Check the text again now, e.g. because something it's checked
+     * against has changed. */
+    relint() {
+      this.view.dispatch({ effects: this.refresh.of(null) });
+      this.CM.forceLinting(this.view);
     }
 
     /** Ask the server to validate a spec; [{path, message}]. Best effort:
-     * if it fails, the spec is still validated when the page is saved. */
+     * if it fails, the spec is still validated when the page is saved. The
+     * last answer is reused while the text is the same. */
     async validate(text) {
+      if (this.validated.text === text) return this.validated.problems;
+      const problems = await this.fetchProblems(text);
+      if (problems) this.validated = { text, problems };
+      return problems || [];
+    }
+
+    async fetchProblems(text) {
       this.request?.abort();
       const request = new AbortController();
       this.request = request;
@@ -357,11 +420,11 @@
             ...csrfHeaders(this.textarea.form),
           },
         });
-        if (!response.ok) return [];
+        if (!response.ok) return null;
         const { errors } = await response.json();
         return Array.isArray(errors) ? errors : [];
       } catch {
-        return [];
+        return null; // not remembered, so it's asked again next time
       } finally {
         if (this.request === request) this.request = null;
       }
@@ -371,8 +434,7 @@
     setServerErrors(messages) {
       const { doc } = this.view.state;
       this.saved = { doc, diagnostics: messageDiagnostics(doc.toString(), messages || []) };
-      this.view.dispatch({ effects: this.refresh.of(null) });
-      this.CM.forceLinting(this.view);
+      this.relint();
     }
 
     setInvalid(invalid) {

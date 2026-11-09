@@ -12,6 +12,7 @@ export {
   highlightWhitespace,
   keymap,
   lineNumbers,
+  placeholder,
 } from "@codemirror/view";
 export { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 export {
