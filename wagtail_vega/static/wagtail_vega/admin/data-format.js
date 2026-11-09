@@ -5,6 +5,7 @@
  * - analyse(text): format, header, rows and problems (with source ranges).
  * - summarise(text): the one-line summary shown under the paste field.
  * - diagnose(text): the problems, for the code editor to mark in place.
+ * - parseRows(text, format): typed rows, as the server parses them.
  *
  * Detection and typing mirror wagtail_vega/data.py; keep them in sync.
  * Needs json-source.js. Exposed as window.wagtailVegaAdmin.dataFormat.
@@ -105,6 +106,41 @@
     if (types.size === 0) return "empty";
     if (types.size === 1) return [...types][0];
     return "mixed";
+  }
+
+  // Mirrors wagtail_vega.data._coerce: numbers, booleans and blanks become
+  // typed values; leading-zero codes and everything else stay as text.
+  function coerce(value) {
+    const stripped = value.trim();
+    if (stripped === "") return null;
+    const lowered = stripped.toLowerCase();
+    if (lowered === "true" || lowered === "false") return lowered === "true";
+    if (LEADING_ZERO_RE.test(stripped)) return value;
+    let number = stripped;
+    if (THOUSANDS_RE.test(stripped)) number = stripped.replaceAll(",", "");
+    else if (!NUMBER_RE.test(stripped)) return value;
+    return Number(number);
+  }
+
+  /** Rows (objects) from CSV/TSV/JSON text, typed exactly as the server's
+   * wagtail_vega.data.parse_text does, for the chart builder (Voyager).
+   * `format` is "csv", "tsv", "json", or empty to detect it. Throws on JSON
+   * that isn't an array of rows. Delimited text works like csv.DictReader:
+   * short rows are padded with null and extra cells are dropped. */
+  function parseRows(text, format) {
+    text = String(text ?? "").replace(/^﻿/, "");
+    if (!text.trim()) return [];
+    const fmt = format || detectFormat(text);
+    if (fmt === "json") {
+      let data = JSON.parse(text);
+      if (data && typeof data === "object" && !Array.isArray(data) && "values" in data) {
+        data = data.values;
+      }
+      if (!Array.isArray(data)) throw new Error("JSON data must be an array of rows.");
+      return data;
+    }
+    const [header = [], ...rows] = parseDelimited(text.trim(), DELIMITERS[fmt] ?? ",");
+    return rows.map((row) => Object.fromEntries(header.map((name, i) => [name, coerce(row[i] ?? "")])));
   }
 
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -210,5 +246,7 @@
     analyse,
     summarise,
     diagnose,
+    coerce,
+    parseRows,
   };
 })();

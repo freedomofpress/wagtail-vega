@@ -13,5 +13,6 @@ First release.
 - `wagtail-vega:rendered` and `wagtail-vega:error` events; data that fails to load is reported as an error.
 - Translatable chart template text.
 - A code editor (CodeMirror 6) for specs, JSON fields and pasted data, which underlines JSON syntax errors, spec schema and data host errors (validated live on the server), errors from a failed save, and ragged rows in pasted data. Available as the `wagtail_vega.widgets.CodeEditor` widget.
+- A visual chart builder: a **Build chart with Voyager** button on the spec field opens Vega Voyager, sandboxed in a lightbox, with the chart's data, and writes the chart it builds back as a Vega-Lite v6 spec that refers to the dataset by name. `SpecBlock(voyager=False)` leaves it out.
 - Supports Wagtail 7.4 LTS and newer.
 - Documentation, built with Sphinx.

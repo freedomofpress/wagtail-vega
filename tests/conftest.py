@@ -1,4 +1,5 @@
 import pytest
+from django.core.cache import cache
 
 VL = "https://vega.github.io/schema/vega-lite/v6.json"
 VG = "https://vega.github.io/schema/vega/v6.json"
@@ -62,3 +63,18 @@ def vega_settings(settings):
     """Reset WAGTAIL_VEGA to defaults; tests tweak it as needed."""
     settings.WAGTAIL_VEGA = {}
     return settings.WAGTAIL_VEGA
+
+
+@pytest.fixture(autouse=True)
+def _clear_cache():
+    """Each test starts with an empty cache (parsed documents, SSR output)."""
+    cache.clear()
+    yield
+    cache.clear()
+
+
+@pytest.fixture(autouse=True)
+def _media_root(settings, tmp_path):
+    """Uploads go to a fresh folder per test, as on CI. (A shared folder makes
+    Django rename duplicate filenames, which can hide caching bugs.)"""
+    settings.MEDIA_ROOT = tmp_path / "media"

@@ -79,6 +79,18 @@ export function loadCodeEditor() {
   return { window, registered };
 }
 
+export function loadVoyagerLauncher() {
+  const defined = {};
+  return loadScript("admin/voyager-launcher.js", {
+    customElements: { get: (n) => defined[n], define: (n, c) => { defined[n] = c; } },
+    HTMLElement: class {},
+    Event: class {},
+    URL,
+    document: { baseURI: "https://site.test/admin/pages/1/edit/" },
+    console,
+  });
+}
+
 // Values created inside a vm context have that context's prototypes, which
 // deepStrictEqual treats as different. Round-trip through JSON to compare.
 export const plain = (value) => JSON.parse(JSON.stringify(value));

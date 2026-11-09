@@ -91,9 +91,24 @@ Screen readers announce the field's label and help text, and the first problem u
 
 ## Visual chart builder (Vega Voyager)
 
-% TODO: Document the Vega Voyager button on the spec field, which opens a
-% visual chart builder in a lightbox, once it is merged.
+Above the spec's code editor is a **Build chart with Voyager** button. It opens [Vega Voyager](https://github.com/vega/voyager) in a lightbox, loaded with the chart's data. Editors build a chart by dragging fields onto encoding shelves (x, y, colour…), or by picking one of the views Voyager suggests, and then choose **Use this chart** to put its spec in the field.
 
-:::{note}
-This section is a placeholder. It will describe the visual chart builder, which opens from the spec field.
+Data
+: Voyager gets the data from the form as it is now, whether or not the page has been saved. Pasted data is read exactly as it will be for the chart, documents are read on the server, and URL datasets are fetched by the browser, from allowed hosts only. If the chart has several datasets, a **Dataset** menu picks one. Datasets with no data yet are left out.
+
+Opening the current chart
+: If the field holds a single-view Vega-Lite chart, Voyager opens with its mark and fields. Anything else, such as a Vega spec, layers or concatenated views, starts from the data, and a note says so. Voyager only understands Vega-Lite 2, so parts of the chart it doesn't know are dropped when it opens. For example, grouped bars (`xOffset`) open as stacked bars. If the editor then chooses **Use this chart**, those parts are gone from the spec; the confirmation step's **Keep editing** button, or undo in the code editor, gets them back.
+
+Using the chart
+: **Use this chart** turns Voyager's chart into a Vega-Lite v6 spec that loads the dataset by name (`"data": {"name": "source"}`, never a copy of the data), and checks it with the same checks as saving. If the field already has a spec, the lightbox asks before replacing it. The title, description, width, height and `config` of the spec it replaces are kept. The change goes into the code editor as one edit, so Ctrl+Z (Cmd+Z) undoes it.
+
+Cancelling
+: **Cancel**, the close button and Esc close the lightbox without changing the field. Focus goes back to the button.
+
+The button is disabled, with a note, on charts whose data comes from code ({py:class}`~wagtail_vega.blocks.BaseChartBlock` subclasses without a `data` field), because there's no data in the form to give Voyager. Developers can leave the button out with `SpecBlock(voyager=False)`.
+
+:::{admonition} Limitations
+Voyager is no longer maintained; its last release was in 2018. It builds single-view charts from the features Vega-Lite 2 had, so finishing touches (titles, axis formats, tooltips…) are made in the spec afterwards. Building a chart in it needs a mouse, since it relies on drag and drop, and it has no dark theme. The lightbox around it works with the keyboard and screen readers. Very large datasets are sent to it whole, which can make it slow.
 :::
+
+For how Voyager is isolated from the admin, see {ref}`voyager-security`.

@@ -25,8 +25,10 @@ $ .venv/bin/ruff check . && .venv/bin/ruff format --check .
 | `tests/test_*.py` | Unit tests: spec handling, validation, themes, data parsing, blocks and SSR. |
 | `tests/test_admin.py` | Creating, validating and previewing chart pages through the Wagtail admin. |
 | `tests/test_editor.py` | The code editor widget and its telepath adapters, and the live validation endpoint. |
-| `tests/e2e/` | Playwright browser tests: the dataset editor and the code editors, and chart rendering with themes, dark mode, a strict CSP, no JavaScript and URL blocking. Marked `e2e`. |
-| `tests/js/` | Unit tests for the browser scripts: data parsing and type detection, JSON error locations and JSON path mapping, and security helpers. They use `node:test` and need Node 20 or newer, but no npm packages. |
+| `tests/test_voyager.py` | The Voyager page and document-rows endpoint (permissions, headers, parsing), the Voyager button on the spec editor, and that converted Voyager specs pass validation. |
+| `tests/test_static.py` | `collectstatic` with `ManifestStaticFilesStorage`, which fails on dangling source-map references. |
+| `tests/e2e/` | Playwright browser tests: the dataset editor, the code editors and the Voyager lightbox, and chart rendering with themes, dark mode, a strict CSP, no JavaScript and URL blocking. Marked `e2e`. |
+| `tests/js/` | Unit tests for the browser scripts: data parsing and type detection, JSON error locations and JSON path mapping, Voyager spec conversion, and security helpers. They use `node:test` and need Node 20 or newer, but no npm packages. |
 
 To skip the browser tests, run `pytest -m "not e2e"`. The SSR tests are skipped if vl-convert isn't installed.
 
@@ -97,6 +99,8 @@ $ python scripts/vendor.py
 ```
 
 It downloads each package from npm, checks it against npm's integrity hash, and writes the files into `wagtail_vega/static/wagtail_vega/vendor/` and `wagtail_vega/schemas/`. The versions are recorded in `vendor/VERSIONS.json`. Run the full test suite afterwards, including the browser tests.
+
+The script also bundles Vega Voyager (the admin's visual chart builder) and its old dependencies into `vendor/voyager/`: one `voyager.js`, one `voyager.css` with the icon font inlined, and `LICENSES.txt`. A few published builds need small fixes, applied as exact-text patches (`VOYAGER_PATCHES`) that stop the script if a new version no longer matches. Source-map comments are stripped from every vendored script, because `ManifestStaticFilesStorage` fails on references to maps that aren't vendored.
 
 ### CodeMirror
 

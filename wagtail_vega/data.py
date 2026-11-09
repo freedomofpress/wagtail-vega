@@ -114,8 +114,14 @@ DOCUMENT_SUFFIXES = (".csv", ".tsv", ".json")
 
 
 def document_rows(document) -> list[Any]:
-    """Parse a Wagtail document, cached by its content hash."""
-    key = f"wagtail_vega:doc:{document.pk}:{document.file_hash or document.file.name}"
+    """Parse a Wagtail document, cached by its content hash.
+
+    The key is the file's content hash (computed and saved by Wagtail if the
+    document doesn't have one yet) plus its extension, which decides how it's
+    parsed. So a changed file can never be served from a stale cache entry.
+    """
+    suffix = PurePath(document.file.name).suffix.lower()
+    key = f"wagtail_vega:doc:{document.get_file_hash()}:{suffix}"
     rows = cache.get(key)
     if rows is None:
         with document.open_file() as f:

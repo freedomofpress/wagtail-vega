@@ -2,5 +2,28 @@
   "vega": "6.4.0",
   "vega-lite": "6.5.0",
   "vega-embed": "7.3.0",
-  "vega-interpreter": "2.3.2"
+  "vega-interpreter": "2.3.2",
+  "voyager": {
+    "react": "15.7.0",
+    "react-dom": "15.7.0",
+    "prop-types": "15.8.1",
+    "redux": "3.7.2",
+    "react-redux": "5.1.2",
+    "redux-thunk": "2.4.2",
+    "redux-undo": "1.0.0-beta9-9-6",
+    "react-dnd": "2.6.0",
+    "react-dnd-html5-backend": "2.6.0",
+    "tether": "1.4.7",
+    "react-tether": "0.5.7",
+    "moment": "2.30.1",
+    "vega": "4.0.0",
+    "vega-lite": "2.4.0",
+    "vega-tooltip": "0.4.4",
+    "lodash": "4.17.21",
+    "react-css-modules": "4.7.11",
+    "datavoyager": "2.0.0-alpha.24",
+    "object-unfreeze": "1.1.0",
+    "hoist-non-react-statics": "2.5.5",
+    "font-awesome": "4.7.0"
+  }
 }
