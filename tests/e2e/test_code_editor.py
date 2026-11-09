@@ -1,4 +1,8 @@
-"""The admin's code editors (CodeMirror) for specs and pasted data."""
+"""The admin's code editors (CodeMirror) for specs and pasted data.
+
+A spec field's editor isn't shown inline: it's the chart editor's Code tab
+(see test_chart_builder.py), so the spec tests here open it with "Edit
+chart". The pasted-data editors are inline."""
 
 import json
 import re
@@ -10,7 +14,7 @@ from playwright.sync_api import expect
 from tests.testapp.demo import BAR
 from tests.testapp.models import ChartPage
 
-from .editor import fill_editor, select_text, set_externally
+from .editor import close_editor, fill_editor, open_code_editor, select_text, set_externally
 
 pytestmark = pytest.mark.e2e
 
@@ -22,7 +26,7 @@ VALIDATE_URL = "/admin/wagtail-vega/validate-spec/"
 @pytest.fixture
 def editor(admin_page, live_server, chart_page):
     admin_page.goto(live_server.url + reverse("wagtailadmin_pages:edit", args=(chart_page.pk,)))
-    expect(admin_page.locator(f"{SPEC} .cm-editor").first).to_be_visible()
+    expect(admin_page.locator(f"{SPEC} .cm-editor")).to_have_count(4)
     return admin_page
 
 
@@ -45,13 +49,21 @@ def latest_body(chart_page):
 
 def test_editors_replace_the_code_textareas(editor, console_errors):
     spec = spec_field(editor)
-    expect(spec.locator(".cm-editor")).to_be_visible()
-    expect(spec.locator("textarea")).to_be_hidden()
-    expect(spec.locator(".cm-content")).to_contain_text('"$schema"')
-    # JSON highlighting
-    expect(spec.locator(".tok-propertyName").first).to_have_text('"$schema"')
-    # Every spec, including the developer-defined chart block's
+    # Every spec, including the developer-defined chart block's, has an
+    # editor, shown in the chart editor rather than inline
     expect(editor.locator(f"{SPEC} .cm-editor")).to_have_count(4)
+    expect(spec.locator(".cm-editor")).to_be_hidden()
+    expect(spec.locator("textarea")).to_be_hidden()
+    code = open_code_editor(spec)
+    expect(code.locator(".cm-content")).to_contain_text('"$schema"')
+    # JSON highlighting
+    expect(code.locator(".tok-propertyName").first).to_have_text('"$schema"')
+    # Labelled by the field's label
+    label_id = code.locator(".cm-content").get_attribute("aria-labelledby")
+    expect(editor.locator(f"#{label_id}")).to_contain_text("Spec")
+    close_editor(editor)
+    # Back in the field, hidden
+    expect(spec.locator(".cm-editor")).to_be_hidden()
 
     paste = editor.locator(PASTE).first
     expect(paste.locator(".cm-editor")).to_be_visible()
@@ -62,18 +74,16 @@ def test_editors_replace_the_code_textareas(editor, console_errors):
     # The pasted JSON dataset is highlighted
     expect(editor.locator(f"{PASTE} .tok-propertyName").first).to_be_visible()
 
-    # Labelled by the field's label, and clicking the label focuses it
-    content = spec.locator(".cm-content")
-    label_id = content.get_attribute("aria-labelledby")
-    label = editor.locator(f"#{label_id}")
-    expect(label).to_contain_text("Spec")
-    label.click()
+    # Clicking an inline editor's label focuses it
+    content = paste.locator(".cm-content")
+    editor.locator(f"#{content.get_attribute('aria-labelledby')}").click()
     expect(content).to_be_focused()
     assert console_errors == []
 
 
 def test_tab_moves_focus_out_of_the_editor(editor):
-    content = spec_field(editor).locator(".cm-content")
+    code = open_code_editor(spec_field(editor))
+    content = code.locator(".cm-content")
     content.click()
     before = spec_field(editor).locator("textarea").input_value()
     editor.keyboard.press("Tab")
@@ -82,32 +92,33 @@ def test_tab_moves_focus_out_of_the_editor(editor):
 
 
 def test_invalid_json_is_underlined(editor):
-    spec = spec_field(editor)
-    fill_editor(spec, '{\n  "mark": "bar",\n  "encoding": {"x": 1,}\n}')
-    expect(underlined(spec)).to_have_text(",")
-    status = spec.locator(".wagtail-vega-code__status")
+    code = open_code_editor(spec_field(editor))
+    fill_editor(code, '{\n  "mark": "bar",\n  "encoding": {"x": 1,}\n}')
+    expect(underlined(code)).to_have_text(",")
+    status = code.locator(".wagtail-vega-code__status")
     expect(status).to_have_text("Line 3: Trailing commas aren't allowed in JSON")
-    expect(spec.locator(".cm-content")).to_have_attribute(
+    expect(code.locator(".cm-content")).to_have_attribute(
         "aria-describedby", re.compile("helptext")
     )
 
-    underlined(spec).hover()
+    underlined(code).hover()
     expect(editor.locator(".cm-tooltip-lint")).to_contain_text("Trailing commas")
 
-    fill_editor(spec, '{"mark": "bar"}')
-    expect(underlined(spec)).to_have_count(0)
+    fill_editor(code, '{"mark": "bar"}')
+    expect(underlined(code)).to_have_count(0)
 
 
 def test_schema_error_is_underlined_at_its_node(editor):
     spec = spec_field(editor)
     requests = []
     editor.on("request", lambda r: VALIDATE_URL in r.url and requests.append(r))
+    code = open_code_editor(spec)
 
     # Edit "nominal" -> "nominl" in the x encoding, by typing
     select_text(spec, "nominal")
     editor.keyboard.type("nominl")
-    expect(underlined(spec)).to_have_text('"nominl"')
-    expect(spec.locator(".wagtail-vega-code__status")).to_contain_text(
+    expect(underlined(code)).to_have_text('"nominl"')
+    expect(code.locator(".wagtail-vega-code__status")).to_contain_text(
         "Line 15: 'nominl' is not valid under any of the given schemas"
     )
     assert requests and requests[-1].method == "POST"
@@ -120,8 +131,8 @@ def test_schema_error_is_underlined_at_its_node(editor):
         spec,
         json.dumps({**BAR, "data": {"url": "https://evil.example/x.csv"}}, indent=2),
     )
-    expect(underlined(spec)).to_have_text('"https://evil.example/x.csv"')
-    expect(spec.locator(".wagtail-vega-code__status")).to_contain_text(
+    expect(underlined(code)).to_have_text('"https://evil.example/x.csv"')
+    expect(code.locator(".wagtail-vega-code__status")).to_contain_text(
         "Loading data from https://evil.example/x.csv is not allowed."
     )
 
@@ -141,18 +152,24 @@ def test_failed_save_highlights_server_errors_in_place(editor, chart_page):
     editor.on("request", lambda r: VALIDATE_URL in r.url and requests.append(r))
     spec = spec_field(editor)
     expect(spec).to_contain_text("encoding.x.type: 'nominl' is not valid")
-    expect(underlined(spec)).to_have_text(['"https://evil.example/x.csv"', '"nominl"'])
-    underlined(spec).last.hover()
+    # The field lists them...
+    expect(spec.locator("[data-field-problems] li")).to_contain_text(
+        [re.compile("evil.example"), re.compile("'nominl' is not valid")]
+    )
+    # ...and the code marks them in place
+    code = open_code_editor(spec)
+    expect(underlined(code)).to_have_text(['"https://evil.example/x.csv"', '"nominl"'])
+    underlined(code).last.hover()
     expect(editor.locator(".cm-tooltip-lint")).to_contain_text(
         "'nominl' is not valid under any of the given schemas"
     )
-    expect(spec.locator(".wagtail-vega-code")).to_have_class(re.compile("is-invalid"))
+    expect(code.locator(".wagtail-vega-code")).to_have_class(re.compile("is-invalid"))
     assert requests == []
 
     # Fixing it clears the highlight
     select_text(spec, "nominl")
     editor.keyboard.type("nominal")
-    expect(underlined(spec)).to_have_text(['"https://evil.example/x.csv"'])
+    expect(underlined(code)).to_have_text(['"https://evil.example/x.csv"'])
 
 
 def test_external_input_event_updates_the_editor(editor):
@@ -166,20 +183,22 @@ def test_external_input_event_updates_the_editor(editor):
     )
     new = json.dumps({**BAR, "title": "From the chart builder"}, indent=2)
     set_externally(spec, new)
-    expect(spec.locator(".cm-content")).to_contain_text('"title": "From the chart builder"')
+    code = open_code_editor(spec)
+    expect(code.locator(".cm-content")).to_contain_text('"title": "From the chart builder"')
     # No feedback loop: only the external event fired, and the value stuck
     assert editor.evaluate("window.inputEvents") == 1
     assert textarea.input_value() == new
 
     # The external change is one undoable edit
-    spec.locator(".cm-content").click()
+    code.locator(".cm-content").click()
     editor.keyboard.press("ControlOrMeta+z")
-    expect(spec.locator(".cm-content")).to_contain_text('"title": "Requests by quarter"')
+    expect(code.locator(".cm-content")).to_contain_text('"title": "Requests by quarter"')
     expect(textarea).to_have_value(re.compile('"title": "Requests by quarter"'))
 
 
 def test_typing_updates_the_textarea(editor):
     spec = spec_field(editor)
+    open_code_editor(spec)
     select_text(spec, "Requests")
     editor.keyboard.type("Typed")
     expect(spec.locator("textarea")).to_have_value(re.compile('"title": "Typed by quarter"'))
@@ -202,8 +221,10 @@ def test_paste_problems_are_marked_in_place(editor):
 
 def test_saving_round_trips_editor_content(editor, chart_page):
     spec = spec_field(editor)
+    open_code_editor(spec)
     select_text(spec, "Requests")
     editor.keyboard.type("Typed")
+    close_editor(editor)
     paste = editor.locator(PASTE).first
     data = "quarter\trequests\nQ1\t5\nQ2\t7"
     fill_editor(paste, data)
@@ -216,5 +237,19 @@ def test_saving_round_trips_editor_content(editor, chart_page):
     assert chart["data"][0]["paste"].replace("\r\n", "\n") == data
 
     # And it's shown again after the reload
-    expect(spec_field(editor).locator(".cm-content")).to_contain_text('"Typed by quarter"')
+    code = open_code_editor(spec_field(editor))
+    expect(code.locator(".cm-content")).to_contain_text('"Typed by quarter"')
     expect(editor.locator(PASTE).first.locator("textarea")).to_have_value(data)
+
+
+def test_saving_with_the_editor_open_keeps_the_last_edit(editor, chart_page):
+    """Typing is written to the field after a short pause; saving before
+    then still saves what was typed."""
+    spec = spec_field(editor)
+    open_code_editor(spec)
+    select_text(spec, "Requests")
+    editor.keyboard.type("Last")
+    # Ctrl/Cmd+S straight away, with the editor focused
+    editor.keyboard.press("ControlOrMeta+s")
+    expect(editor.locator(".messages")).to_contain_text("has been updated")
+    assert latest_body(chart_page)[0].value["spec"]["title"] == "Last by quarter"

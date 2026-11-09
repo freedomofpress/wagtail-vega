@@ -46,11 +46,11 @@ The editor itself, CodeMirror 6, is vendored like the Vega libraries (see {doc}`
 
 ### The chart builder
 
-The spec field's **Build chart from data** button (see {doc}`editor-experience`) opens the chart builder. It's wagtail-vega's own code, running in the admin page like the code editor, with no third-party code beyond the Vega libraries the site already ships:
+The spec field's **Edit chart** button (see {doc}`editor-experience`) opens the chart editor, whose **Visual** settings are the chart builder. It's wagtail-vega's own code, running in the admin page like the code editor, with no third-party code beyond the Vega libraries the site already ships:
 
 - It reads the chart's data from the form. Documents are read through `/admin/wagtail-vega/document-rows/?id=…` ({py:func}`wagtail_vega.views.document_rows`), which needs permission to access the admin and to choose (or change) the document. URL datasets are fetched by the admin page, and only from the allowlist, checked on the URL as the browser resolves it.
-- The spec it writes refers to the dataset by name, so no data is copied into it. It's checked with the live validation endpoint above before it's written to the field, and again when the page is saved.
-- Its preview loads the vendored vega, vega-lite and vega-embed from your static files the first time the builder opens, and draws with vega-embed's bundled interpreter, as in {ref}`CSP-safe mode <csp-safe>`. It injects no styles.
+- The spec it writes refers to the dataset by name, so no data is copied into it. It's written to the field as it's made, checked live with the validation endpoint above as in the code editor, and checked again when the page (or an autosave) is saved.
+- Its previews (in the editor and in the spec field) load the vendored vega, vega-lite and vega-embed from your static files the first time a chart is drawn, and draws with vega-embed's bundled interpreter, as in {ref}`CSP-safe mode <csp-safe>`. It injects no styles.
 
 :::{note}
 **If your admin has a Content Security Policy**, the builder needs nothing beyond what the admin itself needs: `script-src` and `style-src` for your static files (no `'unsafe-eval'` or `'unsafe-inline'` for the builder), and `connect-src 'self'` for the validation and document endpoints. Add the hosts of any URL datasets to `connect-src`, since the admin page fetches them for the builder.

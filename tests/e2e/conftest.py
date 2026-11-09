@@ -18,6 +18,23 @@ os.environ.setdefault("DJANGO_ALLOW_ASYNC_UNSAFE", "true")
 
 LOCAL_WEATHER = "/static/testapp/weather.csv"
 
+# A browser test that hangs fails with its name after this long (pytest-timeout)
+E2E_TIMEOUT = 120  # seconds
+
+
+def pytest_collection_modifyitems(items):
+    for item in items:
+        if item.get_closest_marker("e2e") and not item.get_closest_marker("timeout"):
+            item.add_marker(pytest.mark.timeout(E2E_TIMEOUT))
+
+
+@pytest.fixture(autouse=True)
+def _no_autosave(settings):
+    """Wagtail's autosave is off in browser tests, except where a test turns
+    it on (test_chart_builder.py's autosave tests): its requests would
+    overlap the tests' own saves."""
+    settings.WAGTAIL_AUTOSAVE_INTERVAL = 0
+
 
 @pytest.fixture
 def vega_settings(settings):

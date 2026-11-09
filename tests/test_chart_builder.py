@@ -176,7 +176,7 @@ def test_spec_widget_has_builder_button(vega_settings):
     markup = render_spec_field(SpecBlock())
     assert "<wagtail-vega-chart-builder" in markup
     assert 'data-for="spec"' in markup
-    assert "Build chart from data" in markup
+    assert "Edit chart" in markup
     config = builder_config(markup)
     assert config["rowsUrl"] == ROWS
     assert config["validateUrl"] == VALIDATE
@@ -213,16 +213,27 @@ def test_builder_config_without_themes(vega_settings):
 
 
 def test_spec_widget_is_the_code_editor():
-    """The button comes with the spec field's code editor. The textarea is the
-    widget's first element, because Wagtail gives that element the field's
-    aria-describedby and required, which the code editor copies; the button
-    moves itself above it in the browser."""
+    """The field is still the code editor's textarea, first, because Wagtail
+    gives a widget's first element the field's aria-describedby and required,
+    which the code editor copies. The editor is told it's shown in the chart
+    editor's dialog rather than inline."""
     widget = SpecBlock().field.widget
     assert isinstance(widget, CodeEditor) and widget.mode == "spec" and widget.builder
+    assert widget.get_config()["builder"] is True
     markup = render_spec_field(SpecBlock()).strip()
     assert markup.startswith("<textarea")
     assert "data-wagtail-vega-code-editor=" in markup
+    assert "&quot;builder&quot;: true" in markup
     assert markup.index("</textarea>") < markup.index("<wagtail-vega-chart-builder")
+    # The field: a preview, its problems and the button; no inline JSON
+    for part in ("data-field-preview", "data-field-problems", "data-builder-open"):
+        assert part in markup
+    assert "Use this chart" not in markup
+
+
+def test_json_blocks_keep_the_inline_editor():
+    assert "builder" not in CodeEditor(mode="json").get_config()
+    assert "builder" not in SpecBlock(builder=False).field.widget.get_config()
 
 
 def test_spec_widget_without_builder():
@@ -242,11 +253,13 @@ def test_builder_is_the_main_action_for_an_empty_spec(value, first):
     button = markup[markup.index("<button") : markup.index(">", markup.index("<button"))]
     assert ("button-secondary" not in button) is first
     assert ("is-empty" in markup) is first
-    hint = markup[
-        markup.index("data-builder-hint") : markup.index("</p>", markup.index("data-builder-hint"))
+    prompt = markup[
+        markup.index("data-field-empty") : markup.index("</p>", markup.index("data-field-empty"))
     ]
-    assert ("hidden" in hint) is not first
-    assert "without writing JSON" in hint
+    assert ("hidden" in prompt) is not first
+    assert "without writing JSON" in prompt
+    preview = markup[markup.index("data-field-preview") :]
+    assert preview.startswith("data-field-preview hidden") is first
 
 
 ADMIN_STATIC = Path(__file__).parent.parent / "wagtail_vega" / "static" / "wagtail_vega" / "admin"
@@ -298,9 +311,9 @@ def test_builder_strings_are_translated(settings):
     with translation.override("de"):
         strings = builder_strings()
     # No German catalogue ships yet, but the strings go through gettext
-    assert strings["use"] == "Use this chart"
+    assert strings["undo"] == "Undo changes since opening"
     with patch("wagtail_vega.builder_strings._", lambda s: f"[{s}]"):
-        assert builder_strings()["use"] == "[Use this chart]"
+        assert builder_strings()["undo"] == "[Undo changes since opening]"
 
 
 def test_js_strings_fixture_is_current():

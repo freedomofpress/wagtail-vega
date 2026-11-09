@@ -33,6 +33,16 @@
  *   textarea's, and only reads when the textarea's differs from its own.
  *   Setting textarea.value without an event is not noticed.
  *
+ *   With the chart builder (config.builder, see chart-builder.js), the
+ *   editor isn't shown inline: its element (`editor.host`) starts hidden
+ *   and the builder's dialog shows it in its Code tab. Its writes to the
+ *   textarea are debounced while typing (WRITE_DELAY), and flushed when
+ *   it loses focus, when the form is submitted, before the page unloads
+ *   and when `editor.flush()` is called. `editor.onChange(fn)` calls
+ *   fn(text) on every change, and `editor.setText(text)` replaces the
+ *   text as one undoable change. The problems found are passed to
+ *   `onProblems` listeners as [{line, message, severity}].
+ *
  *   The editor is inserted right after the textarea, in the same parent,
  *   so the field's [data-contentpath] wrapper keeps Wagtail's structure and
  *   a button can be added next to the field. `textarea.wagtailVegaEditor`
@@ -53,6 +63,12 @@
   const admin = window.wagtailVegaAdmin;
   const { jsonSource, dataFormat } = admin;
   const LINT_DELAY = 500; // ms after typing stops
+  const WRITE_DELAY = 300; // ms; with the chart builder, see the contract above
+  // English fallbacks; the widget passes translations (config.strings)
+  const DEFAULT_STRINGS = {
+    status: "Line %(line)s: %(message)s",
+    statusMore: "Line %(line)s: %(message)s (and %(count)s more)",
+  };
 
   // -- Diagnostics: plain functions, no CodeMirror (see tests/js) -----------
 
@@ -223,6 +239,15 @@
       this.checks = [];
       this.validated = { text: null, problems: [] };
       this.placeholder = textarea.getAttribute("placeholder") || "";
+      // Translated on the server (builder_strings.code_editor_strings)
+      this.strings = { ...DEFAULT_STRINGS, ...(config.strings || {}) };
+      this.builder = Boolean(config.builder);
+      this.writeDelay = this.builder ? WRITE_DELAY : 0;
+      this.pendingWrite = null;
+      this.changeListeners = new Set();
+      this.problemListeners = new Set();
+      this.problems = [];
+      this.focusTarget = null; // e.g. the builder's button, when not inline
 
       const required = textarea.required;
       // A hidden required field would block submission with no visible
@@ -233,6 +258,8 @@
       this.host = document.createElement("div");
       this.host.className = `wagtail-vega-code wagtail-vega-code--${this.mode}`;
       this.host.style.setProperty("--wagtail-vega-code-rows", String(config.rows || textarea.rows || 8));
+      // Shown by the chart builder's dialog rather than inline
+      if (this.builder) this.host.hidden = true;
       textarea.after(this.host);
 
       this.refresh = CM.StateEffect.define();
@@ -260,6 +287,11 @@
         this.host.append(this.status);
       }
 
+      if (this.writeDelay) {
+        // Never lose the last edit: write it before the form is used
+        textarea.form?.addEventListener("submit", () => this.flush(), true);
+        window.addEventListener("beforeunload", () => this.flush());
+      }
       const pull = () => this.pull();
       textarea.addEventListener("input", pull);
       textarea.addEventListener("change", pull);
@@ -312,6 +344,7 @@
             update.transactions.some((tr) => tr.effects.some((e) => e.is(this.refresh))),
         }),
         CM.EditorView.updateListener.of((update) => this.onUpdate(update)),
+        CM.EditorView.domEventHandlers({ blur: () => void this.flush() }),
         editorTheme(CM),
       ];
     }
@@ -319,19 +352,82 @@
     onUpdate(update) {
       if (update.docChanged) {
         const text = update.state.doc.toString();
-        if (text !== this.textarea.value) {
-          this.textarea.value = text;
-          this.textarea.dispatchEvent(new Event("input", { bubbles: true }));
+        if (this.writeDelay) {
+          clearTimeout(this.pendingWrite);
+          this.pendingWrite = setTimeout(() => this.flush(), this.writeDelay);
+        } else {
+          this.write(text);
         }
+        for (const listener of this.changeListeners) listener(text, update);
       }
       const linted = update.transactions.some((tr) =>
         tr.effects.some((e) => e.is(this.CM.setDiagnosticsEffect)),
       );
-      if (linted) this.updateStatus(update.state);
+      if (linted) {
+        this.updateStatus(update.state);
+        this.updateProblems(update.state);
+      }
+    }
+
+    write(text) {
+      if (text === this.textarea.value) return;
+      this.textarea.value = text;
+      this.textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+
+    /** Write a debounced change to the textarea now. */
+    flush() {
+      if (this.pendingWrite === null) return;
+      clearTimeout(this.pendingWrite);
+      this.pendingWrite = null;
+      this.write(this.view.state.doc.toString());
+    }
+
+    /** Call fn(text, update) whenever the text changes. Returns an
+     * unsubscribe function. */
+    onChange(fn) {
+      this.changeListeners.add(fn);
+      return () => this.changeListeners.delete(fn);
+    }
+
+    /** Call fn(problems) whenever the problems change, and now. */
+    onProblems(fn) {
+      this.problemListeners.add(fn);
+      fn(this.problems);
+      return () => this.problemListeners.delete(fn);
+    }
+
+    /** Replace the text as one undoable change, with the cursor at the
+     * start of what changed. */
+    setText(text, { userEvent = "input.replace" } = {}) {
+      const current = this.view.state.doc.toString();
+      if (text === current) return;
+      const change = diff(current, text);
+      this.view.dispatch({
+        changes: change,
+        selection: { anchor: change.from },
+        scrollIntoView: true,
+        userEvent,
+      });
+    }
+
+    updateProblems(state) {
+      const found = [];
+      this.CM.forEachDiagnostic(state, (d, from) =>
+        found.push({ from, line: state.doc.lineAt(from).number, message: d.message, severity: d.severity }),
+      );
+      found.sort((a, b) => a.from - b.from);
+      const problems = found.map(({ line, message, severity }) => ({ line, message, severity }));
+      if (JSON.stringify(problems) === JSON.stringify(this.problems)) return;
+      this.problems = problems;
+      for (const listener of this.problemListeners) listener(problems);
     }
 
     /** Take a change made to the textarea from outside the editor. */
     pull() {
+      // A change from outside wins over one still waiting to be written
+      clearTimeout(this.pendingWrite);
+      this.pendingWrite = null;
       const text = this.textarea.value;
       const current = this.view.state.doc.toString();
       if (text !== current) this.view.dispatch({ changes: diff(current, text) });
@@ -449,9 +545,12 @@
       this.CM.forEachDiagnostic(state, (d, from) => found.push({ d, from }));
       found.sort((a, b) => a.from - b.from);
       const first = found[0];
-      const more = found.length > 1 ? ` (and ${found.length - 1} more)` : "";
       const text = first
-        ? `Line ${state.doc.lineAt(first.from).number}: ${first.d.message}${more}`
+        ? this.t(found.length > 1 ? "statusMore" : "status", {
+            line: state.doc.lineAt(first.from).number,
+            message: first.d.message,
+            count: found.length - 1,
+          })
         : "";
       // Only touch the live region when the text changes, so screen readers
       // aren't told the same thing after every pause in typing
@@ -459,6 +558,12 @@
       this.status.hidden = !first;
       this.status.classList.toggle("is-warning", Boolean(first) && first.d.severity !== "error");
       this.status.textContent = text;
+    }
+
+    /** The string `key`, with its %(name)s placeholders filled in. */
+    t(key, vars = {}) {
+      const template = this.strings[key] ?? key;
+      return template.replace(/%\((\w+)\)s/g, (match, name) => (name in vars ? String(vars[name]) : match));
     }
 
     linkLabel() {
@@ -478,7 +583,8 @@
     }
 
     focus() {
-      this.view.focus();
+      if (this.focusTarget) this.focusTarget.focus();
+      else this.view.focus();
     }
   }
 

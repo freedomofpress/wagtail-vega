@@ -1,27 +1,77 @@
-/* wagtail-vega admin: the "Build chart" button and the chart builder.
+/* wagtail-vega admin: the chart spec field and the chart editor.
    Uses Wagtail admin colour tokens, so it follows the light/dark theme. */
 
-.wagtail-vega-spec__toolbar {
+/* The field: the chart (or a prompt), its problems, and "Edit chart" */
+.wagtail-vega-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.wagtail-vega-field__prompt {
+  margin: 0;
+  padding: 1rem 1.25rem;
+  color: var(--w-color-text-context, inherit);
+  background: var(--w-color-surface-field-inactive, rgb(0 0 0 / 0.04));
+  border: 1px dashed var(--w-color-border-field-default, #ccc);
+  border-radius: 0.3125rem;
+}
+.wagtail-vega-field__chart {
+  min-height: 3rem;
+  padding: 0.75rem;
+  overflow-x: auto;
+  color: #262626;
+  background: #fff;
+  border: 1px solid var(--w-color-border-furniture, #e0e0e0);
+  border-radius: 0.3125rem;
+}
+.wagtail-vega-field__chart:empty {
+  display: none;
+}
+.wagtail-vega-field__chart[data-color-scheme="dark"] {
+  color: #f6f6f8;
+  background: #1e1e1e;
+}
+.wagtail-vega-field__chart svg {
+  max-width: 100%;
+  height: auto;
+}
+.wagtail-vega-field__status,
+.wagtail-vega-field__note {
+  margin: 0.25rem 0 0;
+  font-size: 0.875rem;
+  color: var(--w-color-text-meta, inherit);
+}
+.wagtail-vega-field__status:empty {
+  display: none;
+}
+.wagtail-vega-field__problems {
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  color: var(--w-color-text-context, inherit);
+  border-inline-start: 4px solid var(--w-color-text-error, #cd4444);
+  background: var(--w-color-surface-field-inactive, rgb(0 0 0 / 0.04));
+  border-radius: 0.3125rem;
+}
+.wagtail-vega-field__problems p {
+  margin: 0 0 0.25rem;
+  font-weight: 600;
+}
+.wagtail-vega-field__problems ul {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+}
+.wagtail-vega-field__problems .is-error {
+  color: var(--w-color-text-error, #cd4444);
+}
+.wagtail-vega-field__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem 1rem;
-  margin-bottom: 0.5rem;
 }
-.wagtail-vega-spec__toolbar .button .icon {
+.wagtail-vega-field__actions .button .icon {
   width: 1rem;
   height: 1rem;
-}
-.wagtail-vega-spec__hint {
-  flex: 1 1 16rem;
-  margin: 0;
-  font-size: 0.875rem;
-  color: var(--w-color-text-context, inherit);
-}
-.wagtail-vega-spec__note {
-  margin: 0;
-  font-size: 0.875rem;
-  color: var(--w-color-text-meta, inherit);
 }
 
 /* The lightbox */
@@ -118,30 +168,103 @@ html.wagtail-vega-builder-open {
   margin: 0;
 }
 
-/* Controls on the left, preview on the right; stacked on narrow screens */
+/* Settings or code (tabs) on the left, preview on the right; stacked on
+   narrow screens */
 .wagtail-vega-builder__body {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(22rem, 30rem) minmax(0, 1fr);
+  grid-template-columns: minmax(22rem, 32rem) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
 }
-.wagtail-vega-builder__controls,
+.wagtail-vega-builder__panes {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-inline-end: 1px solid var(--w-color-border-furniture, #e0e0e0);
+}
+.wagtail-vega-builder__panel,
 .wagtail-vega-builder__preview {
   min-height: 0;
   overflow: auto;
   padding: 1rem 1.25rem 1.5rem;
 }
-.wagtail-vega-builder__controls {
-  border-inline-end: 1px solid var(--w-color-border-furniture, #e0e0e0);
+.wagtail-vega-builder__panel {
+  flex: 1;
 }
-.wagtail-vega-builder__problem {
-  grid-column: 1 / -1;
-  max-width: 42rem;
-  padding: 1.5rem 1.25rem;
+.wagtail-vega-builder__tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.5rem 1.25rem 0;
+  border-bottom: 1px solid var(--w-color-border-furniture, #e0e0e0);
 }
-.wagtail-vega-builder__problem p {
-  margin: 0 0 1rem;
+.wagtail-vega-builder__tabs [role="tab"] {
+  margin-bottom: -1px;
+  padding: 0.5rem 1rem;
+  font-weight: 600;
+  color: var(--w-color-text-meta, inherit);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: 3px solid transparent;
+  border-radius: 0.3125rem 0.3125rem 0 0;
+  cursor: pointer;
+}
+.wagtail-vega-builder__tabs [role="tab"][aria-selected="true"] {
+  color: var(--w-color-text-label, inherit);
+  border-bottom-color: var(--w-color-border-interactive-focus, var(--w-color-secondary, #007d7e));
+}
+.wagtail-vega-builder__tabs [role="tab"]:hover {
+  color: var(--w-color-text-label, inherit);
+}
+.wagtail-vega-builder__tabs [role="tab"]:focus-visible {
+  outline: 3px solid var(--w-color-focus, #ffbf47);
+  outline-offset: -3px;
+}
+.wagtail-vega-builder__badge {
+  color: var(--w-color-text-error, #cd4444);
+}
+.wagtail-vega-builder .visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.wagtail-vega-builder__settings {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.wagtail-vega-builder__settings:disabled {
+  opacity: 0.6;
+}
+.wagtail-vega-builder__settings > .wagtail-vega-builder__dataset {
+  margin-bottom: 1.25rem;
+}
+.wagtail-vega-builder__notice {
+  margin: 0 0 1.25rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  background: var(--w-color-surface-field-inactive, rgb(0 0 0 / 0.04));
+  border-inline-start: 4px solid var(--w-color-border-furniture, #e0e0e0);
+  border-radius: 0.3125rem;
+}
+.wagtail-vega-builder__notice.is-blocking {
+  border-inline-start-color: var(--w-color-warning-100, #faa500);
+}
+.wagtail-vega-builder__notice p {
+  margin: 0;
+}
+.wagtail-vega-builder__notice .button {
+  margin-top: 0.75rem;
+}
+.wagtail-vega-builder__panel--code .wagtail-vega-builder__hint {
+  margin: 0 0 0.75rem;
+}
+.wagtail-vega-builder__panel--code .cm-editor {
+  max-height: none;
 }
 @media (max-width: 50em) {
   .wagtail-vega-builder {
@@ -155,15 +278,16 @@ html.wagtail-vega-builder-open {
     display: block;
     overflow: auto;
   }
-  .wagtail-vega-builder__controls,
+  .wagtail-vega-builder__panes {
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--w-color-border-furniture, #e0e0e0);
+  }
+  .wagtail-vega-builder__panel,
   .wagtail-vega-builder__preview {
     overflow: visible;
     padding-inline: 1rem;
   }
-  .wagtail-vega-builder__controls {
-    border-inline-end: 0;
-    border-bottom: 1px solid var(--w-color-border-furniture, #e0e0e0);
-  }
+  .wagtail-vega-builder__tabs,
   .wagtail-vega-builder__header,
   .wagtail-vega-builder__footer {
     padding-inline: 1rem;
@@ -333,31 +457,9 @@ html.wagtail-vega-builder-open {
   font-size: 0.875rem;
   color: var(--w-color-text-meta, inherit);
 }
-.wagtail-vega-builder__json {
-  margin-top: 1rem;
-}
-.wagtail-vega-builder__json summary {
-  display: list-item;
-  list-style: disclosure-closed inside;
-  cursor: pointer;
-  font-weight: 600;
-}
-.wagtail-vega-builder__json[open] summary {
-  list-style-type: disclosure-open;
-}
 .wagtail-vega-builder summary:focus-visible {
   outline: 3px solid var(--w-color-focus, #ffbf47);
   outline-offset: 2px;
-}
-.wagtail-vega-builder__json pre {
-  max-height: 24rem;
-  overflow: auto;
-  margin: 0.5rem 0 0;
-  padding: 0.75rem;
-  font-size: 0.8125rem;
-  background: var(--w-color-surface-field, transparent);
-  border: 1px solid var(--w-color-border-furniture, #e0e0e0);
-  border-radius: 0.3125rem;
 }
 
 /* Footer messages and actions */
@@ -387,10 +489,6 @@ html.wagtail-vega-builder-open {
   align-items: center;
   gap: 0.75rem;
 }
-.wagtail-vega-builder__confirm {
-  margin-inline-start: auto;
-}
-.wagtail-vega-builder__confirm p {
-  margin: 0;
-  font-weight: 600;
+.wagtail-vega-builder__actions .button[disabled] {
+  opacity: 0.6;
 }
