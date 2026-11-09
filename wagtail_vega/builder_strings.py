@@ -1,5 +1,5 @@
-"""The chart builder's text, translated on the server and passed to the
-browser with the builder's settings (see ``widgets.CodeEditor``).
+"""The chart builder's and code editor's text, translated on the server and
+passed to the browser with their settings (see ``widgets.CodeEditor``).
 
 chart-builder.js and chart-spec.js look every string up by key; values use
 ``%(name)s`` placeholders, filled in by the browser.
@@ -237,3 +237,12 @@ def builder_strings() -> dict[str, str]:
         "error.library": _("Couldn't load %(src)s."),
     }
     return strings
+
+
+def code_editor_strings() -> dict[str, str]:
+    """The code editor's own text (code-editor.js), for every code field:
+    the status line under the editor that names the first problem."""
+    return {
+        "status": _("Line %(line)s: %(message)s"),
+        "statusMore": _("Line %(line)s: %(message)s (and %(count)s more)"),
+    }

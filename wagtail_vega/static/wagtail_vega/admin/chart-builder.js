@@ -55,6 +55,8 @@
   const CUSTOM = "__custom__";
   const PREVIEW_DELAY = 200; // ms, in the editor
   const FIELD_DELAY = 400; // ms, for the field's preview
+  // Fields draw their chart once they're (nearly) on screen
+  const OBSERVE = { rootMargin: "200px 0px" };
 
   // The builder's text, translated on the server (builder_strings.py) and
   // passed in the field's settings. Values use %(name)s placeholders.
@@ -1298,7 +1300,7 @@
         this.observer = new IntersectionObserver((entries) => {
           this.visible = entries.some((entry) => entry.isIntersecting);
           if (this.visible && this.stale) this.renderField();
-        });
+        }, OBSERVE);
         this.observer.observe(this);
       } else {
         this.visible = true;

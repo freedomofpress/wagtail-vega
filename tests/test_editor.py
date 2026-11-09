@@ -3,6 +3,7 @@ spec validation endpoint."""
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth.models import Permission
@@ -11,6 +12,7 @@ from django.urls import reverse
 from wagtail.admin.telepath import JSContext
 
 from wagtail_vega.blocks import DatasetBlock, JSONBlock, PastedDataBlock, SpecBlock
+from wagtail_vega.builder_strings import code_editor_strings
 from wagtail_vega.validation import SpecProblem, spec_problems
 from wagtail_vega.widgets import CodeEditor
 
@@ -36,7 +38,7 @@ def test_widget_renders_a_textarea_with_its_config():
     assert html.startswith("<textarea")
     assert 'name="paste"' in html and ">\na\tb</textarea>" in html
     assert 'spellcheck="false"' in html
-    assert editor_config(html) == {"mode": "data", "rows": 8}
+    assert editor_config(html) == {"mode": "data", "rows": 8, "strings": code_editor_strings()}
 
 
 def test_spec_mode_points_at_the_validation_endpoint():
@@ -44,8 +46,18 @@ def test_spec_mode_points_at_the_validation_endpoint():
     assert editor_config(html) == {
         "mode": "spec",
         "rows": 16,
+        "strings": code_editor_strings(),
         "validateUrl": reverse("wagtail_vega_validate_spec"),
     }
+
+
+def test_code_editor_strings_are_translated():
+    assert code_editor_strings()["status"] == "Line %(line)s: %(message)s"
+    with patch("wagtail_vega.builder_strings._", lambda s: f"[{s}]"):
+        strings = code_editor_strings()
+        assert strings["statusMore"] == "[Line %(line)s: %(message)s (and %(count)s more)]"
+        html = CodeEditor(mode="data").render("paste", "")
+        assert editor_config(html)["strings"] == strings
 
 
 def test_unknown_mode():

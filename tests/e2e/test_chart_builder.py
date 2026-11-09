@@ -139,6 +139,9 @@ CHARTS = {
     "bar": (
         REQUESTS,
         [
+            # The suggested chart is already a bar chart of these fields, so
+            # nothing would change: pick the suggestion to put it in the page
+            ("press", '[data-suggestion="0"]'),
             (M, None, "Bar"),
             ("field", "x", "quarter"),
             ("field", "y", "requests"),
@@ -435,12 +438,29 @@ def test_build_with_the_keyboard_and_save(name, editor, chart_page, live_server,
 # -- The field ---------------------------------------------------------------------------
 
 
+def show_field(page, index=0):
+    """Scroll the spec field into view: its chart is drawn once it's seen."""
+    launcher = page.locator(LAUNCHER).nth(index)
+    launcher.scroll_into_view_if_needed()
+    return launcher
+
+
 def field_chart(page, index=0):
-    return page.locator(LAUNCHER).nth(index).locator("[data-field-chart]")
+    return show_field(page, index).locator("[data-field-chart]")
 
 
 def field_problems(page, index=0):
-    return page.locator(LAUNCHER).nth(index).locator("[data-field-problems]")
+    return show_field(page, index).locator("[data-field-problems]")
+
+
+def expect_settings_disabled(dialog, disabled=True):
+    # A disabled <fieldset> disables its controls; Playwright's
+    # to_be_disabled() only applies to the controls themselves
+    fieldset = dialog.locator("[data-controls-fieldset]")
+    if disabled:
+        expect(fieldset).to_have_attribute("disabled", "")
+    else:
+        expect(fieldset).not_to_have_attribute("disabled", re.compile(".*"))
 
 
 def test_the_field_shows_the_chart_not_json(editor, console_errors):
@@ -474,9 +494,7 @@ def test_the_field_lists_the_specs_problems(editor):
     # Invalid JSON: no chart, and the syntax error
     set_externally(spec_field(editor), '{"mark": "bar",}')
     expect(problems.locator("li")).to_have_count(1)
-    expect(editor.locator(LAUNCHER).first.locator("[data-field-status]")).to_contain_text(
-        "isn't valid JSON"
-    )
+    expect(show_field(editor).locator("[data-field-status]")).to_contain_text("isn't valid JSON")
     expect(field_chart(editor)).to_be_empty()
 
 
@@ -563,7 +581,7 @@ def test_close_and_escape_just_close(editor):
     expect(trigger(editor)).to_be_focused()
     assert json.loads(textarea.input_value())["mark"] == {"type": "point", "tooltip": True}
     # ...and the field's chart shows it
-    expect(field_chart(editor).locator("svg .mark-symbol")).to_have_count(1)
+    expect(field_chart(editor).locator("svg .mark-symbol.role-mark")).to_have_count(1)
 
     # Escape from a text field
     dialog = open_builder(editor)
@@ -623,7 +641,7 @@ def test_invalid_json_freezes_the_settings_and_keeps_the_text(editor, console_er
     editor.keyboard.type('"bar",,')
     notice = dialog.locator("[data-controls-notice]")
     expect(notice).to_contain_text("The code isn't valid JSON (line")
-    expect(dialog.locator("[data-controls-fieldset]")).to_be_disabled()
+    expect_settings_disabled(dialog)
     # The error is shown in place, and the Code tab says there's a problem
     expect(dialog.locator(".wagtail-vega-code__status")).to_contain_text("Line")
     expect(dialog.locator("[data-code-badge]")).to_be_visible()
@@ -634,7 +652,7 @@ def test_invalid_json_freezes_the_settings_and_keeps_the_text(editor, console_er
     editor.keyboard.press("Backspace")
     editor.keyboard.press("Backspace")
     expect(notice).to_be_hidden()
-    expect(dialog.locator("[data-controls-fieldset]")).to_be_enabled()
+    expect_settings_disabled(dialog, False)
     # Closing with invalid JSON keeps it too
     editor.keyboard.type(",")
     editor.keyboard.press("Escape")
@@ -721,54 +739,104 @@ def test_layers_open_in_the_code(editor):
     assert json.loads(spec_textarea(editor).input_value()) == layered
 
 
-def test_autosave_saves_edits_made_in_the_editor(editor, chart_page):
-    """Wagtail's autosave (7.4+) picks up the editor's changes: they're written
-    to the form with "input" events as they're made."""
-    edit_url = reverse("wagtailadmin_pages:edit", args=(chart_page.pk,))
+# Wagtail's autosave (7.4 and 8.x behave the same): the edit form's
+# w-unsaved controller takes a snapshot of the form's data 2 s after the
+# page loads ("w-unsaved:watch-edits"), then compares the form's data with
+# it every 500 ms. When it differs, w-autosave POSTs the form to the edit
+# URL with "Accept: application/json" (debounced by
+# WAGTAIL_AUTOSAVE_INTERVAL, 500 ms by default). A valid form saves a
+# revision and returns 200 {"success": true, "revision_id": ...}; a form
+# with errors saves nothing and returns 400 {"success": false,
+# "error_code": "validation_error"}, and the indicator shows "paused".
+# Autosave stays on, so the next valid change is saved.
+
+
+@pytest.fixture
+def autosave_editor(admin_page, live_server, chart_page):
+    """The edit page, once Wagtail has started watching it for edits."""
+    admin_page.add_init_script(
+        """document.addEventListener("w-unsaved:watch-edits", () => {
+            window.__watchingEdits = true;
+        });"""
+    )
+    admin_page.goto(live_server.url + reverse("wagtailadmin_pages:edit", args=(chart_page.pk,)))
+    admin_page.wait_for_function("window.__watchingEdits === true")
+    return admin_page
+
+
+def is_autosave(response, chart_page):
+    request = response.request
+    return (
+        request.method == "POST"
+        and request.url.endswith(reverse("wagtailadmin_pages:edit", args=(chart_page.pk,)))
+        and "application/json" in (request.headers.get("accept") or "")
+    )
+
+
+def autosave_indicator(page):
+    return page.locator("#w-autosave-indicator")
+
+
+def wait_for_saved_spec(page, chart_page, check, timeout=15_000):
+    """Wait until the latest revision's first chart spec passes `check`
+    (autosave may save a few revisions while the editor types)."""
+    for _ in range(timeout // 250):
+        revision = ChartPage.objects.get(pk=chart_page.pk).get_latest_revision_as_object()
+        spec = revision.body[0].value["spec"]
+        if check(spec):
+            return spec
+        page.wait_for_timeout(250)
+    raise AssertionError(f"Not autosaved: the latest revision has {spec!r}")
+
+
+def test_autosave_saves_edits_made_in_the_editor(autosave_editor, chart_page):
+    """Edits in the editor reach the form as they're made, so Wagtail
+    autosaves them, with the editor still open."""
+    page = autosave_editor
     before = chart_page.revisions.count()
-    dialog = open_builder(editor)
-
-    def is_autosave(request):
-        return (
-            request.method == "POST"
-            and request.url.endswith(edit_url)
-            and "application/json" in (request.headers.get("accept") or "")
-        )
-
-    with editor.expect_response(lambda r: is_autosave(r.request), timeout=15_000) as info:
-        type_into(editor, control(dialog, "chartTitle"), "Autosaved title")
-    assert info.value.ok
-    page = ChartPage.objects.get(pk=chart_page.pk)
-    assert page.revisions.count() > before
-    revision = page.get_latest_revision_as_object()
-    assert revision.body[0].value["spec"]["title"] == "Autosaved title"
+    dialog = open_builder(page)
+    with page.expect_response(lambda r: is_autosave(r, chart_page), timeout=15_000) as info:
+        type_into(page, control(dialog, "chartTitle"), "Autosaved title")
+    response = info.value
+    assert response.status == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["revision_id"]
+    expect(autosave_indicator(page)).to_have_attribute("data-w-autosave-state-value", "saved")
+    wait_for_saved_spec(page, chart_page, lambda spec: spec.get("title") == "Autosaved title")
+    assert ChartPage.objects.get(pk=chart_page.pk).revisions.count() > before
+    expect(dialog).to_be_visible()
 
 
-def test_autosave_with_invalid_json_loses_nothing(editor, chart_page):
-    """Autosave is refused while the spec isn't valid JSON (Wagtail shows that
-    in its indicator); the text stays in the field and the editor."""
-    edit_url = reverse("wagtailadmin_pages:edit", args=(chart_page.pk,))
-    dialog = open_builder(editor)
+def test_autosave_with_invalid_json_loses_nothing(autosave_editor, chart_page):
+    """Invalid JSON is written to the field too. Wagtail refuses to autosave
+    it (and says so); nothing is lost, and the fix is autosaved."""
+    page = autosave_editor
+    dialog = open_builder(page)
     dialog.get_by_role("tab", name="Code").click()
-    select_text(spec_field(editor), '"Requests by quarter"')
-
-    def is_autosave(response):
-        return response.request.method == "POST" and response.request.url.endswith(edit_url)
-
-    with editor.expect_response(is_autosave, timeout=15_000) as info:
-        editor.keyboard.type('"Half typed')
+    select_text(spec_field(page), '"Requests by quarter"')
+    with page.expect_response(lambda r: is_autosave(r, chart_page), timeout=15_000) as info:
+        page.keyboard.type('"Half typed')
         dialog.get_by_role("tab", name="Code").focus()  # blur: written now
-    assert not info.value.ok or info.value.json().get("success") is False
-    expect(spec_textarea(editor)).to_have_value(re.compile('"Half typed'))
-    assert '"Half typed' in editor_text(editor)
-    # Fixing it is autosaved
-    dialog.locator("[data-code] .cm-content").focus()
-    with editor.expect_response(lambda r: is_autosave(r) and r.ok, timeout=15_000):
-        select_text(spec_field(editor), '"Half typed')
-        editor.keyboard.type('"Fixed title"')
+    response = info.value
+    assert response.status == 400
+    body = response.json()
+    assert body["success"] is False
+    assert body["error_code"] == "validation_error"
+    expect(autosave_indicator(page)).to_have_attribute("data-w-autosave-state-value", "paused")
+    # Nothing is lost: the field and the editor keep the text
+    expect(spec_textarea(page)).to_have_value(re.compile('"Half typed'))
+    assert '"Half typed' in editor_text(page)
+    expect(dialog).to_be_visible()
+    # The fix is autosaved
+    with page.expect_response(
+        lambda r: is_autosave(r, chart_page) and r.status == 200, timeout=15_000
+    ):
+        select_text(spec_field(page), '"Half typed')
+        page.keyboard.type('"Fixed title"')
         dialog.get_by_role("tab", name="Code").focus()
-    page = ChartPage.objects.get(pk=chart_page.pk)
-    assert page.get_latest_revision_as_object().body[0].value["spec"]["title"] == "Fixed title"
+    expect(autosave_indicator(page)).to_have_attribute("data-w-autosave-state-value", "saved")
+    wait_for_saved_spec(page, chart_page, lambda spec: spec.get("title") == "Fixed title")
 
 
 def test_lightbox_is_modal(editor):
@@ -825,7 +893,7 @@ def test_charts_with_data_from_code(editor, console_errors):
     textarea = spec_textarea(editor, DONATIONS)
     dialog = open_builder(editor, DONATIONS)
     expect(dialog.locator("[data-controls-notice]")).to_contain_text("data comes from code")
-    expect(dialog.locator("[data-controls-fieldset]")).to_be_disabled()
+    expect_settings_disabled(dialog)
     expect(dialog.locator("[data-warnings]")).to_contain_text("data comes from code")
     dialog.get_by_role("tab", name="Code").click()
     select_text(spec_field(editor, DONATIONS), "Donations (from the database)")

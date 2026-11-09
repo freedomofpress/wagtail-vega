@@ -64,6 +64,11 @@
   const { jsonSource, dataFormat } = admin;
   const LINT_DELAY = 500; // ms after typing stops
   const WRITE_DELAY = 300; // ms; with the chart builder, see the contract above
+  // English fallbacks; the widget passes translations (config.strings)
+  const DEFAULT_STRINGS = {
+    status: "Line %(line)s: %(message)s",
+    statusMore: "Line %(line)s: %(message)s (and %(count)s more)",
+  };
 
   // -- Diagnostics: plain functions, no CodeMirror (see tests/js) -----------
 
@@ -234,6 +239,8 @@
       this.checks = [];
       this.validated = { text: null, problems: [] };
       this.placeholder = textarea.getAttribute("placeholder") || "";
+      // Translated on the server (builder_strings.code_editor_strings)
+      this.strings = { ...DEFAULT_STRINGS, ...(config.strings || {}) };
       this.builder = Boolean(config.builder);
       this.writeDelay = this.builder ? WRITE_DELAY : 0;
       this.pendingWrite = null;
@@ -538,9 +545,12 @@
       this.CM.forEachDiagnostic(state, (d, from) => found.push({ d, from }));
       found.sort((a, b) => a.from - b.from);
       const first = found[0];
-      const more = found.length > 1 ? ` (and ${found.length - 1} more)` : "";
       const text = first
-        ? `Line ${state.doc.lineAt(first.from).number}: ${first.d.message}${more}`
+        ? this.t(found.length > 1 ? "statusMore" : "status", {
+            line: state.doc.lineAt(first.from).number,
+            message: first.d.message,
+            count: found.length - 1,
+          })
         : "";
       // Only touch the live region when the text changes, so screen readers
       // aren't told the same thing after every pause in typing
@@ -548,6 +558,12 @@
       this.status.hidden = !first;
       this.status.classList.toggle("is-warning", Boolean(first) && first.d.severity !== "error");
       this.status.textContent = text;
+    }
+
+    /** The string `key`, with its %(name)s placeholders filled in. */
+    t(key, vars = {}) {
+      const template = this.strings[key] ?? key;
+      return template.replace(/%\((\w+)\)s/g, (match, name) => (name in vars ? String(vars[name]) : match));
     }
 
     linkLabel() {

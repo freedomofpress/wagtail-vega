@@ -10,7 +10,7 @@ from django.urls import reverse
 from wagtail.admin.telepath import register
 from wagtail.admin.telepath.widgets import WidgetAdapter
 
-from .builder_strings import builder_strings
+from .builder_strings import builder_strings, code_editor_strings
 from .conf import get_allowed_hosts, get_setting
 from .encoders import VegaJSONEncoder
 from .themes import get_themes
@@ -74,7 +74,11 @@ class CodeEditor(forms.Textarea):
         super().__init__({**default_attrs, **(attrs or {})})
 
     def get_config(self) -> dict:
-        config = {"mode": self.mode, "rows": int(self.attrs.get("rows") or 16)}
+        config = {
+            "mode": self.mode,
+            "rows": int(self.attrs.get("rows") or 16),
+            "strings": code_editor_strings(),
+        }
         if self.mode == "spec":
             config["validateUrl"] = reverse("wagtail_vega_validate_spec")
         if self.builder:

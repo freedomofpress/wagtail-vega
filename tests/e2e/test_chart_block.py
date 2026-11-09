@@ -1,7 +1,10 @@
 """Chart blocks in the admin: labels, empty states, and the check that the
 spec only loads datasets the chart has (chart-block.js).
 
-TODO-23: check the spec-editor steps against the combined editor."""
+The spec's code editor is shown in the chart editor ("Edit chart"); its
+problems are listed in the field too, which is what most checks here read."""
+
+import re
 
 import pytest
 from django.urls import reverse
@@ -9,7 +12,7 @@ from playwright.sync_api import expect
 
 from tests.testapp.models import ChartPage
 
-from .editor import fill_editor
+from .editor import close_editor, fill_editor, open_code_editor
 
 pytestmark = pytest.mark.e2e
 
@@ -47,29 +50,34 @@ def test_chart_blocks_are_labelled_with_their_title(editor):
 def test_spec_must_load_the_charts_datasets(editor, chart_page):
     chart = editor.locator(TOP_LEVEL).first
     spec = chart.locator(SPEC)
-    status = spec.locator(".wagtail-vega-code__status")
-    expect(spec.locator(".cm-lintRange-error")).to_have_count(0)
+    problems = spec.locator("[data-field-problems]")
+    expect(problems).to_be_hidden()
 
     # Renaming the dataset leaves the spec loading one that isn't there
     name_input(chart.locator(DATASET)).fill("requests")
-    expect(spec.locator(".cm-lintRange-error")).to_have_text('"source"')
-    expect(status).to_have_text(
-        'Line 6: This chart has no dataset called "source". '
-        "Use one of its datasets (requests), or add one under Data."
+    expect(problems.locator("li")).to_have_text(
+        [
+            'Line 6: This chart has no dataset called "source". '
+            "Use one of its datasets (requests), or add one under Data."
+        ]
     )
+    # ...marked in the code
+    code = open_code_editor(spec)
+    expect(code.locator(".cm-lintRange-error")).to_have_text('"source"')
+    expect(code.locator(".wagtail-vega-code__status")).to_contain_text("Line 6:")
+    close_editor(editor)
 
     # Adding a dataset with that name fixes it
     data_list = chart.locator('[data-contentpath="data"]').first
     data_list.locator("button[data-streamfield-list-add]").last.click()
     expect(chart.locator(DATASET)).to_have_count(2)
-    expect(spec.locator(".cm-lintRange-error")).to_have_count(0)
-    expect(status).to_be_hidden()
+    expect(problems).to_be_hidden()
 
     # Saving with a missing dataset is an error, shown on the spec
     added = chart.locator(DATASET).last
     name_input(added).fill("other")
     fill_editor(added.locator('[data-contentpath="paste"]'), "a\n1")
-    expect(spec.locator(".cm-lintRange-error")).to_have_count(1)
+    expect(problems.locator("li")).to_have_count(1)
     revisions = chart_page.revisions.count()
     editor.locator("button.action-save").first.click()
     editor.wait_for_load_state("networkidle")
@@ -77,7 +85,11 @@ def test_spec_must_load_the_charts_datasets(editor, chart_page):
     expect(spec.locator(".w-field__errors")).to_contain_text(
         'data.name: This chart has no dataset called "source".'
     )
-    expect(spec.locator(".cm-lintRange-error")).to_have_text('"source"')
+    expect(spec.locator("[data-field-problems] li")).to_contain_text(
+        [re.compile('no dataset called "source"')]
+    )
+    code = open_code_editor(spec)
+    expect(code.locator(".cm-lintRange-error")).to_have_text('"source"')
     assert chart_page.revisions.count() == revisions
 
 
@@ -86,22 +98,25 @@ def test_new_chart_starts_empty_with_examples(editor):
     editor.get_by_role("option", name="Chart", exact=True).first.click()
     chart = editor.locator(TOP_LEVEL).first
     spec = chart.locator(SPEC)
-    expect(spec.locator(".cm-editor")).to_be_visible()
     # Not the JSON text "null"
     expect(spec.locator("textarea")).to_have_value("")
-    expect(spec.locator(".cm-placeholder")).to_contain_text("Paste a spec here")
-    expect(spec.locator(".cm-placeholder")).to_contain_text('"data": {"name": "source"}')
+    expect(spec.locator("[data-field-empty]")).to_be_visible()
     paste = chart.locator('[data-contentpath="paste"]')
     expect(paste.locator(".cm-placeholder")).to_contain_text("quarter,requests")
 
+    # The code shows the example spec as its placeholder
+    code = open_code_editor(spec)
+    expect(code.locator(".cm-placeholder")).to_contain_text("Paste a spec here")
+    expect(code.locator(".cm-placeholder")).to_contain_text('"data": {"name": "source"}')
+
     # The example spec, once typed in, is valid
     fill_editor(
-        spec,
+        code,
         '{"$schema": "https://vega.github.io/schema/vega-lite/v6.json",'
         ' "data": {"name": "source"}, "mark": "bar"}',
     )
-    expect(spec.locator(".cm-placeholder")).to_have_count(0)
-    expect(spec.locator(".cm-lintRange-error")).to_have_count(0)
+    expect(code.locator(".cm-placeholder")).to_have_count(0)
+    expect(code.locator(".cm-lintRange-error")).to_have_count(0)
 
 
 def test_source_toggle_and_summary_are_named(editor):

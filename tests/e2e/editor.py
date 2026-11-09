@@ -44,3 +44,23 @@ def set_externally(wrapper, text):
         }""",
         text,
     )
+
+
+def open_code_editor(field):
+    """Open the chart editor from the spec field ``field`` (its
+    ``[data-contentpath="spec"]`` element) and show its Code tab. Returns
+    the element that holds the field's code editor while it's open."""
+    page = field.page
+    field.locator("[data-builder-open]").click()
+    dialog = page.locator("dialog.wagtail-vega-builder")
+    dialog.get_by_role("tab", name="Code").click()
+    code = dialog.locator("[data-code]")
+    code.locator(".cm-editor").wait_for(state="visible")
+    return code
+
+
+def close_editor(page):
+    """Close the chart editor with its Close button."""
+    dialog = page.locator("dialog.wagtail-vega-builder")
+    dialog.get_by_role("button", name="Close", exact=True).click()
+    dialog.wait_for(state="detached")
