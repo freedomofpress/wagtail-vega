@@ -34,6 +34,8 @@ To skip the browser tests, run `pytest -m "not e2e"`. The SSR tests are skipped 
 
 Each browser test fails after 120 seconds ([pytest-timeout](https://pypi.org/project/pytest-timeout/), set in `tests/e2e/conftest.py`), so a test that hangs fails with its name rather than stalling the run. A test can set its own limit with `@pytest.mark.timeout(seconds)`. Run the browser tests with `-v` to see each test's name as it runs.
 
+The browser tests run against Django's live server. With the in-memory SQLite database that CI uses, its threads share one database connection, so the test project's `SerialRequestsMiddleware` handles one request at a time, and tests that read the database while the page may still be making requests hold `tests.testapp.middleware.DATABASE_LOCK`. Wagtail's autosave is off in browser tests (`WAGTAIL_AUTOSAVE_INTERVAL = 0`) except in the tests for it.
+
 ### The test matrix
 
 CI runs the Python tests, browser tests included, on:
