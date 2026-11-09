@@ -13,7 +13,7 @@ from django.utils.translation import gettext as _
 from jsonschema import Draft7Validator
 from jsonschema.exceptions import ValidationError, best_match
 
-from .conf import get_setting
+from .conf import get_allowed_hosts, get_setting
 from .spec import VEGA, VEGA_LITE, JSONPath, SpecError, disallowed_url_paths, spec_kind
 
 SCHEMA_DIR = Path(__file__).parent / "schemas"
@@ -94,6 +94,6 @@ def spec_problems(spec: Any) -> list[SpecProblem]:
             spec_kind(spec)
     except SpecError as e:
         return [SpecProblem(("$schema",) if "$schema" in spec else (), str(e))]
-    for path, url in disallowed_url_paths(spec, get_setting("ALLOWED_DATA_HOSTS")):
+    for path, url in disallowed_url_paths(spec, get_allowed_hosts()):
         problems.append(SpecProblem(path, _("Loading data from %s is not allowed.") % url))
     return problems

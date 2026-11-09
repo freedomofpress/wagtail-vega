@@ -37,13 +37,13 @@ Themes editors can pick from, keyed by name. Each value is a theme definition di
 
 Default: `None`
 
-The name of the theme used when neither the block nor the editor picks one. It must be a key in `THEMES`, or rendering raises `ImproperlyConfigured`. With `None`, charts without a theme use Vega's defaults.
+The name of the theme used when neither the block nor the editor picks one. It must be a key in `THEMES`: `manage.py check` reports it if it isn't (`wagtail_vega.E002`), and rendering raises `ImproperlyConfigured`. With `None`, charts without a theme use Vega's defaults.
 
 ## `ALLOWED_DATA_HOSTS`
 
 Default: `[]`
 
-Hosts that specs, URL datasets and server-side rendering may load from. `"*.example.org"` matches `example.org` and its subdomains, and `"*"` matches every host. Relative URLs are always allowed. Checked when pages are saved, and again in the browser. See {doc}`security`.
+Hosts that specs, URL datasets and server-side rendering may load from. `"*.example.org"` matches `example.org` and its subdomains, and `"*"` matches every host. Relative URLs and your site's own hostnames (from Wagtail's sites and `WAGTAILADMIN_BASE_URL`, except `localhost` and loopback addresses) are always allowed. Checked when pages are saved, and again in the browser. See {doc}`security`.
 
 ## `CSP_SAFE`
 
@@ -85,6 +85,4 @@ Validate specs against the bundled Vega and Vega-Lite JSON schemas when pages ar
 
 Default: `{"actions": False, "renderer": "svg"}`
 
-Options for [vega-embed](https://github.com/vega/vega-embed#options). Blocks can add to them with their `embed_options` option.
-
-Setting this replaces the default, so include `"actions": False` to keep the actions menu hidden. wagtail-vega always overrides `defaultStyle`, `tooltip` and `loader`, and sets `theme`, `ast` and `expr` when needed. See [](frontend.md#vega-embed-options).
+Options for [vega-embed](https://github.com/vega/vega-embed#options), merged over the default. Blocks can add to them with their `embed_options` option. wagtail-vega always sets `defaultStyle` and `loader`, adds `disableDefaultStyle` to tooltip options, and sets `theme`, `ast` and `expr` when needed. See [](frontend.md#vega-embed-options).

@@ -197,8 +197,13 @@
       spec = resolveVars(spec, this, p.fallbacks || {});
 
       const dataErrors = [];
+      const embed = { ...p.embed };
+      // Tooltips follow the colour scheme unless a theme was set explicitly
+      if (embed.tooltip && typeof embed.tooltip === "object" && !embed.tooltip.theme) {
+        embed.tooltip = { ...embed.tooltip, theme: this.colorScheme };
+      }
       const options = {
-        ...p.embed,
+        ...embed,
         loader: makeLoader(p.allowedHosts || []),
         logger: makeLogger((args) => dataErrors.push(args.join(" "))),
       };

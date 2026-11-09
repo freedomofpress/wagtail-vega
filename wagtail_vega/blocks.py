@@ -17,11 +17,13 @@ from __future__ import annotations
 
 import collections
 import json
+import logging
 import secrets
 from dataclasses import dataclass, field
 from typing import Any
 
 from django import forms
+from django.core import checks
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator, URLValidator
 from django.forms.fields import InvalidJSONInput
@@ -36,7 +38,7 @@ from wagtail.blocks.struct_block import StructBlockAdapter, StructBlockValidatio
 from wagtail.documents.blocks import DocumentChooserBlock
 
 from . import ssr
-from .conf import get_setting
+from .conf import DEFAULTS, get_allowed_hosts, get_setting
 from .data import DOCUMENT_SUFFIXES, document_rows, parse_text
 from .encoders import VegaJSONEncoder
 from .spec import (
@@ -44,12 +46,15 @@ from .spec import (
     host_allowed,
     inject_datasets,
     is_remote,
+    normalize_url,
     remote_data,
     spec_kind,
 )
 from .themes import Theme, get_theme, resolve_css_vars, theme_choices
 from .validation import spec_problems
 from .widgets import EDITOR_JS, CodeEditor
+
+logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------
 # JSON input
@@ -153,10 +158,12 @@ SOURCE_FIELDS = {PASTE: ("paste",), DOCUMENT: ("document",), URL: ("url", "forma
 
 
 def validate_data_url(value):
-    """Accept http(s) URLs and site-relative paths ("/media/data.csv")."""
-    if value.startswith("/") and not value.startswith("//"):
+    """Accept http(s) URLs and site-relative paths ("/media/data.csv"),
+    judged as the browser will see them (see ``spec.normalize_url``)."""
+    url = normalize_url(value)
+    if url.startswith("/") and not url.startswith("//"):
         return
-    URLValidator(schemes=["http", "https"])(value)
+    URLValidator(schemes=["http", "https"])(url)
 
 
 class DataURLBlock(blocks.CharBlock):
@@ -263,7 +270,7 @@ class DatasetBlock(blocks.StructBlock):
         elif source == URL:
             if not value["url"]:
                 errors["url"] = ValidationError(_("Enter a URL."))
-            elif not host_allowed(value["url"], get_setting("ALLOWED_DATA_HOSTS")):
+            elif not host_allowed(value["url"], get_allowed_hosts()):
                 errors["url"] = ValidationError(_("Data can't be loaded from this host."))
         if errors:
             raise StructBlockValidationError(block_errors=errors)
@@ -335,7 +342,7 @@ class Chart:
             "darkConfig": self.dark_config,
             "embed": self.embed_options,
             "fallbacks": self.fallbacks,
-            "allowedHosts": list(get_setting("ALLOWED_DATA_HOSTS")),
+            "allowedHosts": get_allowed_hosts(),
             "cspSafe": bool(get_setting("CSP_SAFE")),
         }
 
@@ -420,15 +427,42 @@ class BaseChartBlock(blocks.StructBlock):
     def get_theme(self, value, context=None) -> Theme | None:
         return get_theme(self.meta.theme or value.get("theme"))
 
+    def check(self, **kwargs):
+        errors = super().check(**kwargs)
+        if self.meta.theme and self.meta.theme not in get_setting("THEMES"):
+            errors.append(
+                checks.Error(
+                    f"{type(self).__name__} uses theme {self.meta.theme!r}, "
+                    "which isn't in WAGTAIL_VEGA['THEMES'].",
+                    hint="Fix Meta.theme, or add the theme to the THEMES setting.",
+                    obj=kwargs.get("field", self),
+                    id="wagtail_vega.E003",
+                )
+            )
+        return errors
+
     def get_embed_options(self, value, context=None, theme=None) -> dict:
+        """vega-embed options: the defaults, then the ``EMBED_OPTIONS``
+        setting, then ``Meta.embed_options``, each merged over the last.
+
+        vega-embed's own styles ship in ``wagtail-vega.css`` rather than being
+        injected at runtime (which a strict CSP would block), so
+        ``defaultStyle`` is always off. Tooltip options (a dict) are kept,
+        with vega-tooltip's style injection turned off for the same reason;
+        ``"tooltip": False`` turns tooltips off.
+        """
         options = {
+            **DEFAULTS["EMBED_OPTIONS"],
             **get_setting("EMBED_OPTIONS"),
             **(self.meta.embed_options or {}),
-            # Styles ship in wagtail-vega.css, so nothing is injected
-            # (keeps strict CSP happy)
             "defaultStyle": False,
-            "tooltip": {"disableDefaultStyle": True},
         }
+        tooltip = options.get("tooltip", True)
+        if tooltip is not False:
+            options["tooltip"] = {
+                **(tooltip if isinstance(tooltip, dict) else {}),
+                "disableDefaultStyle": True,
+            }
         if theme and theme.vega_theme:
             options["theme"] = theme.vega_theme
         return options
@@ -457,9 +491,13 @@ class BaseChartBlock(blocks.StructBlock):
 
     # -- rendering ----------------------------------------------------------
 
-    def build_chart(self, value, context=None) -> Chart:
+    def build_chart(self, value, context=None, *, for_page=True) -> Chart:
+        """Everything needed to render the chart. With ``for_page=False``, the
+        page-only extras (server-rendered SVG and fallback tables) are
+        skipped."""
         theme = self.get_theme(value, context)
         datasets = self.get_datasets(value, context)
+        self.check_remote_datasets(datasets)
         spec = self.get_spec(value, context, datasets=datasets, theme=theme)
         kind = spec_kind(spec)
 
@@ -476,6 +514,8 @@ class BaseChartBlock(blocks.StructBlock):
             if theme.dark:
                 dark = self.get_spec(value, context, datasets, theme, dark=True)
                 chart.dark_config = dark.get("config")
+        if not for_page:
+            return chart
         if self.use_ssr(value):
             fallbacks = theme.fallbacks if theme else {}
             chart.svg = ssr.render_svg(
@@ -486,6 +526,41 @@ class BaseChartBlock(blocks.StructBlock):
         if self.use_fallback_table(value):
             chart.tables = build_tables(datasets, get_setting("FALLBACK_TABLE_MAX_ROWS"))
         return chart
+
+    def check_remote_datasets(self, datasets) -> None:
+        """Warn about remote datasets on hosts that aren't allowed.
+
+        Editors' URLs are checked when they save. URLs that ``get_datasets()``
+        returns from code aren't, and would only fail in readers' browsers, so
+        log them where the developer will see them.
+        """
+        allowed = get_allowed_hosts()
+        for name, dataset in datasets.items():
+            if is_remote(dataset) and not host_allowed(dataset["url"], allowed):
+                logger.warning(
+                    "wagtail-vega: %s.get_datasets() returned dataset %r with URL %s, "
+                    "whose host isn't in ALLOWED_DATA_HOSTS; browsers will refuse to load it.",
+                    type(self).__name__,
+                    name,
+                    dataset["url"],
+                )
+
+    def get_api_representation(self, value, context=None):
+        """The chart as Wagtail's API returns it: the final spec (datasets
+        injected, theme merged) and everything else the page's script gets,
+        so a headless frontend can render it with vega-embed."""
+        chart = self.build_chart(value, context, for_page=False)
+        return json.loads(
+            json.dumps(
+                {
+                    "kind": chart.kind,
+                    **chart.payload,
+                    "description": chart.description,
+                    "caption": chart.caption,
+                },
+                cls=VegaJSONEncoder,
+            )
+        )
 
     def get_context(self, value, parent_context=None):
         context = super().get_context(value, parent_context=parent_context)
