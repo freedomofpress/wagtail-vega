@@ -7,7 +7,7 @@ This page describes what editors see when they work with a `ChartBlock`, so you 
 Editors add a **Chart** block from the StreamField's block menu. Its fields are shown in this order:
 
 1. **Data**: a list of datasets. Each has a **Name**, which defaults to `source`, and a **Source** toggle.
-2. **Spec**: a JSON text area for the Vega or Vega-Lite spec.
+2. **Spec**: the Vega or Vega-Lite spec, in a [code editor](#code-editor) that underlines problems as you type.
 3. **Description**: a short description of the chart, for people using screen readers. It isn't shown on the page.
 4. **Caption**: shown under the chart.
 5. **Theme**: a dropdown of the site's themes. The blank option is labelled with the default theme, e.g. "Site default (House style)".
@@ -30,7 +30,7 @@ Paste
 
   `Tab-separated (e.g. copied from a spreadsheet) · 6 rows · quarter (text), requests (number)`
 
-  It warns about rows with the wrong number of values and about invalid JSON, before the page is saved.
+  It warns about rows with the wrong number of values and about invalid JSON, before the page is saved. The [code editor](#code-editor) also marks them in place.
 
 Document
 : Choose a `.csv`, `.tsv` or `.json` file from the document library. This suits data that's updated separately, or shared between charts.
@@ -52,18 +52,42 @@ When the page is saved, editors see an error if:
 - a document isn't a `.csv`, `.tsv` or `.json` file;
 - a URL isn't allowed.
 
+The code editor shows the spec and pasted data problems as editors type, so most of these can be fixed before saving.
+
 ## Developer-defined charts
 
 Blocks based on {py:class}`~wagtail_vega.blocks.BaseChartBlock` (see {doc}`custom-data`) show only **Spec**, **Description** and **Caption**, plus any fields you add. Tell editors which dataset names the block provides, and what columns they have, for example in the block's `help_text`.
 
 ## Code editor
 
-% TODO: Document the CodeMirror-based code editor for the spec and paste
-% fields (inline error highlighting) once it is merged.
+The **Spec** field, the **Paste** field and any other `JSONBlock` are edited in a code editor ([CodeMirror 6](https://codemirror.net/)). It has line numbers, bracket matching, folding of objects and arrays, search (Ctrl+F, or Cmd+F on a Mac) and undo, and follows the admin's light or dark theme.
 
-:::{note}
-This section is a placeholder. It will describe the code editor for the spec and paste fields, with inline error highlighting.
-:::
+Problems are underlined where they are, with a marker in the gutter. Hovering over the underline shows the message:
+
+JSON syntax errors
+: Shown as you type, at the character where the JSON stops making sense, e.g. a trailing comma or a missing quote.
+
+Spec errors
+: Shortly after the editor stops typing, the spec is checked on the server with the same checks as saving: the Vega or Vega-Lite schema, and the data host allowlist. The problem is underlined at the part of the spec it's about. For example, in `"type": "nominl"` the value `"nominl"` is underlined, and a `url` on a host that isn't allowed is underlined too. The first problem, with its line number, is also shown under the editor.
+
+Errors from saving
+: If a page can't be saved because of the spec, the errors are shown above the field as usual, and each one is also underlined in the spec, at the path its message starts with (e.g. `encoding.x.type`).
+
+Pasted data
+: Lines don't wrap, so columns line up, and tabs are shown as arrows, so a spreadsheet paste is easy to check. JSON data is highlighted. Rows with the wrong number of values are marked on their line, and JSON errors where they are.
+
+### Keyboard
+
+The editor doesn't capture the Tab key: Tab and Shift+Tab move to the next and previous field, as in any other field. To indent, use Ctrl+] (Cmd+] on a Mac); to outdent, Ctrl+[ (Cmd+[).
+
+| Key | Action |
+| --- | --- |
+| F8 | Go to the next problem |
+| Ctrl+Shift+M (Cmd+Shift+M) | List all the problems in a panel |
+| Ctrl+F (Cmd+F) | Search and replace |
+| Ctrl+Z / Ctrl+Shift+Z | Undo / redo |
+
+Screen readers announce the field's label and help text, and the first problem under the editor is a live region.
 
 ## Visual chart builder (Vega Voyager)
 

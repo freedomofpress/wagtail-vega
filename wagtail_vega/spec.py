@@ -131,11 +131,28 @@ def inject_datasets(spec: Mapping[str, Any], datasets: Mapping[str, Dataset]) ->
     return spec
 
 
+JSONPath = tuple[str | int, ...]
+
+
+def iter_url_paths(spec: Any, path: JSONPath = ()) -> Iterator[tuple[JSONPath, str]]:
+    """Yield ``(path, url)`` for every literal ``url`` string in the spec (data
+    sources, images), in document order. ``path`` is the keys and indices
+    leading to the URL, e.g. ``("data", "url")``."""
+    if isinstance(spec, dict):
+        for key, value in spec.items():
+            if key == "url" and isinstance(value, str):
+                yield (*path, key), value
+            else:
+                yield from iter_url_paths(value, (*path, key))
+    elif isinstance(spec, list):
+        for i, value in enumerate(spec):
+            yield from iter_url_paths(value, (*path, i))
+
+
 def iter_urls(spec: Any) -> Iterator[str]:
     """Yield every literal ``url`` string in the spec (data sources, images)."""
-    for key, value, _parent in _walk(spec):
-        if key == "url" and isinstance(value, str):
-            yield value
+    for _path, url in iter_url_paths(spec):
+        yield url
 
 
 def host_allowed(url: str, allowed_hosts: list[str]) -> bool:
@@ -158,4 +175,9 @@ def host_allowed(url: str, allowed_hosts: list[str]) -> bool:
 
 def disallowed_urls(spec: Any, allowed_hosts: list[str]) -> list[str]:
     """The literal URLs in ``spec`` that :func:`host_allowed` rejects."""
-    return [u for u in iter_urls(spec) if not host_allowed(u, allowed_hosts)]
+    return [url for _path, url in disallowed_url_paths(spec, allowed_hosts)]
+
+
+def disallowed_url_paths(spec: Any, allowed_hosts: list[str]) -> list[tuple[JSONPath, str]]:
+    """Like :func:`disallowed_urls`, with the path to each URL."""
+    return [(p, u) for p, u in iter_url_paths(spec) if not host_allowed(u, allowed_hosts)]

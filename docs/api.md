@@ -34,6 +34,32 @@ This reference is generated from the code's docstrings. The guides explain how t
 .. autoclass:: wagtail_vega.blocks.SpecBlock
 
 .. autoclass:: wagtail_vega.blocks.JSONBlock
+
+.. autoclass:: wagtail_vega.blocks.PastedDataBlock
+```
+
+## Widgets
+
+```{eval-rst}
+.. autoclass:: wagtail_vega.widgets.CodeEditor
+```
+
+The code editor is registered with Wagtail's telepath, so it works in StreamField blocks, including blocks added after the page loads, and also in ordinary forms. To use it in your own block, give a `FieldBlock` a form field with this widget, as `PastedDataBlock` does.
+
+Scripts that change a code field, such as a button that generates a spec, should change the `<textarea>`, which stays in the form and is what's submitted, and then fire an `input` event:
+
+```js
+const textarea = fieldWrapper.querySelector("textarea");
+textarea.value = JSON.stringify(spec, null, 2);
+textarea.dispatchEvent(new Event("input", { bubbles: true }));
+```
+
+The editor follows, as one change that can be undone. The editor also fires `input` on the textarea for every change made in it. The full contract is in the comment at the top of `static/wagtail_vega/admin/code-editor.js`.
+
+## Admin views
+
+```{eval-rst}
+.. autofunction:: wagtail_vega.views.validate_spec
 ```
 
 ## Themes
@@ -47,14 +73,14 @@ This reference is generated from the code's docstrings. The guides explain how t
 
 ```{eval-rst}
 .. automodule:: wagtail_vega.spec
-   :members: SpecError, spec_kind, inject_datasets, remote_data, is_remote, deep_merge, iter_urls, host_allowed, disallowed_urls
+   :members: SpecError, spec_kind, inject_datasets, remote_data, is_remote, deep_merge, iter_urls, iter_url_paths, host_allowed, disallowed_urls, disallowed_url_paths
 ```
 
 ## Validation
 
 ```{eval-rst}
 .. automodule:: wagtail_vega.validation
-   :members: validate_spec
+   :members: spec_problems, SpecProblem, schema_problems, validate_spec
 ```
 
 ## Data parsing

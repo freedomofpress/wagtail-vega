@@ -13,6 +13,8 @@ from playwright.sync_api import expect
 
 from tests.testapp.models import ChartPage
 
+from .editor import fill_editor
+
 pytestmark = pytest.mark.e2e
 
 DATASET = ".wagtail-vega-dataset"
@@ -41,6 +43,11 @@ def choose_source(dataset, label):
     field(dataset, "source_type").get_by_text(label, exact=True).click()
 
 
+def fill_paste(dataset, text):
+    """Replace the pasted data by typing into its code editor."""
+    fill_editor(field(dataset, "paste"), text)
+
+
 def test_initial_state_matches_saved_source(editor):
     datasets = editor.locator(DATASET)
     assert_visible_fields(datasets.nth(0), "paste")
@@ -60,6 +67,7 @@ def test_toggle_switches_inputs(editor):
     assert_visible_fields(dataset, "paste")
     # Switching back doesn't lose what was pasted
     expect(field(dataset, "paste").locator("textarea")).to_have_value(re.compile("^quarter"))
+    expect(field(dataset, "paste").locator(".cm-content")).to_contain_text("quarter")
 
 
 def test_toggle_is_keyboard_accessible(editor):
@@ -76,19 +84,17 @@ def test_paste_summary(editor):
         "Tab-separated (e.g. copied from a spreadsheet) · 6 rows · "
         "quarter (text), agency (text), requests (number)"
     )
-    textarea = field(dataset, "paste").locator("textarea")
-
-    textarea.fill("year,count\n2024,10\n2025\n2026,12")
+    fill_paste(dataset, "year,count\n2024,10\n2025\n2026,12")
     expect(summary).to_contain_text("Comma-separated · 3 rows")
     expect(summary.locator(".wagtail-vega-summary__warning")).to_have_text(
         "⚠ Line 3 has 1 value but there are 2 columns."
     )
 
-    textarea.fill("[oops")
+    fill_paste(dataset, "[oops")
     expect(summary).to_have_class("wagtail-vega-summary is-error")
     expect(summary).to_contain_text("couldn't be read")
 
-    textarea.fill("")
+    fill_paste(dataset, "")
     expect(summary).to_be_hidden()
 
 
@@ -100,7 +106,7 @@ def test_new_dataset_defaults_to_paste(editor):
     expect(field(new, "name").locator("input")).to_have_value("source")
     expect(field(new, "source_type").locator("input[value=paste]")).to_be_checked()
     assert_visible_fields(new, "paste")
-    field(new, "paste").locator("textarea").fill('[{"a": 1}]')
+    fill_paste(new, '[{"a": 1}]')
     expect(new.locator(".wagtail-vega-summary")).to_contain_text("JSON · 1 row · a (number)")
 
 
@@ -131,7 +137,7 @@ def test_save_error_keeps_selected_source(editor, chart_page):
 
 def test_save_switches_source_and_drops_stale_input(editor, chart_page):
     dataset = editor.locator(DATASET).first
-    field(dataset, "paste").locator("textarea").fill("quarter,requests\nQ1,5")
+    fill_paste(dataset, "quarter,requests\nQ1,5")
     choose_source(dataset, "URL")
     field(dataset, "url").locator("input").fill("/static/testapp/weather.csv")
     choose_source(dataset, "Paste")

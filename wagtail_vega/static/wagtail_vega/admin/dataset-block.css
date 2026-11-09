@@ -50,15 +50,6 @@
   pointer-events: none;
 }
 
-/* Pasted data: monospace, no wrapping, aligned tabs */
-.wagtail-vega-paste textarea {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.875rem;
-  white-space: pre;
-  overflow-x: auto;
-  tab-size: 12;
-}
-
 .wagtail-vega-summary {
   margin-top: 0.5rem;
   font-size: 0.875rem;
