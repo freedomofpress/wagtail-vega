@@ -1,28 +1,49 @@
-/* wagtail-vega admin: the "Build chart" button and the chart builder.
+/* wagtail-vega admin: the chart spec field and the chart editor.
  *
- * A button on each spec field opens a lightbox (a modal <dialog>) with one
- * of the chart's datasets, read from the unsaved form. Editors pick a chart
- * type and fields with ordinary form controls, see a live preview drawn
- * with the Vega libraries the site already ships, and "Use this chart"
- * writes a Vega-Lite 6 spec that loads the dataset by name.
+ * THE FIELD. A spec field with the builder (CodeEditor(builder=True), see
+ * widgets.py) shows a preview of the chart, the spec's problems (from the
+ * code editor's checks: JSON syntax, the schema, data hosts, missing
+ * datasets, and errors from a failed save), and an "Edit chart" button.
+ * While the spec is empty, a prompt replaces the preview and the button is
+ * the main action. The <textarea> stays in the form, hidden, as the value
+ * that's saved.
  *
- * - The model and its specs (including how an existing spec is opened and
- *   what's kept from it) are in chart-spec.js.
- * - Data comes from the form as it is now: pasted text is parsed with
- *   data-format.js (as the server will), documents through the
- *   document-rows endpoint, and URL datasets are fetched by the browser,
- *   from allowed hosts only.
- * - The spec is checked with the validate-spec endpoint (the checks saving
- *   runs) before it's written.
- * - Writing follows code-editor.js's contract: textarea.value is set and a
- *   bubbling "input" event dispatched, which the code editor takes as one
- *   undoable change.
- * - The Vega libraries are loaded the first time a builder opens, not with
- *   the edit page. The preview uses vega-interpreter, so it needs no
- *   'unsafe-eval' in the admin's Content Security Policy.
+ * THE EDITOR. "Edit chart" opens one <dialog> with:
  *
- * The button is rendered by the spec field's CodeEditor widget (widgets.py),
- * with its settings in data-config. Needs data-format.js and chart-spec.js.
+ * - Visual settings (a "Visual" tab): dataset, chart type, encodings…,
+ *   read from and written to the spec with chart-spec.js's round-trip
+ *   rules: what the settings don't show is kept as it is.
+ * - The code (a "Code" tab): the field's own CodeMirror editor
+ *   (code-editor.js), moved into the dialog while it's open, so its checks,
+ *   undo history and server errors carry on.
+ * - A live preview, in the chart's theme.
+ *
+ * All three work on one spec, the code editor's text:
+ *
+ * - A change in the settings writes the new spec into the code editor as
+ *   one undoable change (formatted, with the cursor where it changed).
+ * - An edit in the code is read back into the settings and preview. While
+ *   the JSON is invalid, they stay at the last valid spec and say why. A
+ *   spec the settings can't show (a Vega spec, layers…) disables them, with
+ *   a note; the code and preview keep working.
+ * - Opening the editor, or switching tabs, never changes the spec: only an
+ *   edit does. An empty spec shows a suggested chart, which is only written
+ *   once the editor changes a setting or picks a suggestion.
+ *
+ * Every change goes to the textarea as it's made (code-editor.js debounces
+ * typing, and flushes on blur, close and submit), with a bubbling "input"
+ * event, so Wagtail's unsaved-changes and autosave controllers see it.
+ * There's no "use" or "cancel" step: Close and Esc just close, and "Undo
+ * changes since opening" puts back the spec the editor opened with.
+ *
+ * Data comes from the form as it is now: pasted text is parsed with
+ * data-format.js (as the server will), documents through the document-rows
+ * endpoint, and URL datasets are fetched by the browser, from allowed hosts
+ * only. The Vega libraries load once, the first time a chart is drawn, and
+ * draw with vega-interpreter, so the admin needs no 'unsafe-eval'.
+ *
+ * All text comes from the server (builder_strings.py), looked up by key.
+ * Needs data-format.js, code-editor.js and chart-spec.js.
  */
 (() => {
   "use strict";
@@ -31,10 +52,11 @@
   // Element boundaries in Wagtail's StreamField / StructBlock markup
   const BOUNDARY = "[data-streamfield-child], [data-contentpath], [data-contentpath-disabled]";
   const CUSTOM = "__custom__";
-  const PREVIEW_DELAY = 200; // ms
+  const PREVIEW_DELAY = 200; // ms, in the editor
+  const FIELD_DELAY = 400; // ms, for the field's preview
 
   // The builder's text, translated on the server (builder_strings.py) and
-  // passed in the button's settings. Values use %(name)s placeholders.
+  // passed in the field's settings. Values use %(name)s placeholders.
   let STRINGS = {};
 
   function t(key, vars = {}) {
@@ -45,9 +67,7 @@
   /** A message from chart-spec.js ({key, vars}), translated. */
   const message = ({ key, vars }) => t(key, vars);
 
-  const escapeHTML = (text) =>
-    String(text).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-
+  const escapeHTML = (text) => String(text).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
   const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
   const clone = (v) => JSON.parse(JSON.stringify(v));
 
@@ -105,9 +125,9 @@
 
   /** Datasets a ChartBlock subclass adds in code (extra_dataset_names),
    * which chart-block.js puts on the block. They have no rows here. */
-  function extraDatasetNames(launcher) {
+  function extraDatasetNames(el) {
     try {
-      const names = JSON.parse(launcher.closest("[data-wagtail-vega-extra-datasets]")?.dataset.wagtailVegaExtraDatasets || "[]");
+      const names = JSON.parse(el.closest("[data-wagtail-vega-extra-datasets]")?.dataset.wagtailVegaExtraDatasets || "[]");
       return Array.isArray(names) ? names.filter((n) => typeof n === "string") : [];
     } catch {
       return [];
@@ -136,7 +156,9 @@
     return Boolean(dataset.paste.trim());
   }
 
+  /** The chart's datasets that have data, as entered in the form now. */
   function readDatasets(dataField) {
+    if (!dataField) return [];
     return [...dataField.querySelectorAll(".wagtail-vega-dataset")]
       .filter((el) => !isDeleted(el))
       .map((el) => {
@@ -175,41 +197,39 @@
     return parseRows(dataset.paste);
   }
 
-  function csrfHeaders() {
-    const config = window.wagtailConfig || {};
-    const token =
-      config.CSRF_TOKEN ||
-      document.querySelector('input[name="csrfmiddlewaretoken"]')?.value ||
-      document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/)?.[1];
-    return token ? { [config.CSRF_HEADER_NAME || "X-CSRFToken"]: token } : {};
+  // Rows for each dataset as entered, so redrawing doesn't fetch them again
+  const rowsCache = new Map();
+
+  function cachedRows(dataset, config) {
+    const key = JSON.stringify(dataset);
+    if (!rowsCache.has(key)) {
+      const promise = loadRows(dataset, config).then((rows) => {
+        if (!Array.isArray(rows)) throw new Error(t("unreadable", { name: dataset.name }));
+        return rows;
+      });
+      promise.catch(() => rowsCache.delete(key)); // try again next time
+      rowsCache.set(key, promise);
+    }
+    return rowsCache.get(key);
   }
 
-  /** Problems as messages, e.g. "encoding.x.type: ...", like a failed save. */
-  function problemMessages(errors) {
-    return errors.map(({ path, message }) =>
-      path && path.length ? `${path.join(".")}: ${message}` : message,
+  /** {rows: {name: rows}, errors: [message]} for the datasets. */
+  async function loadAllRows(datasets, config) {
+    const rows = {};
+    const errors = [];
+    await Promise.all(
+      datasets.map(async (dataset) => {
+        try {
+          rows[dataset.name] = await cachedRows(dataset, config);
+        } catch (e) {
+          errors.push(e.message);
+        }
+      }),
     );
+    return { rows, errors };
   }
 
-  /** Check a spec with the validation endpoint the code editor uses (the
-   * same checks as saving). Returns error messages, empty if it's valid. */
-  async function checkSpec(spec, config) {
-    const response = await fetch(config.validateUrl, {
-      method: "POST",
-      credentials: "same-origin",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Requested-With": "XMLHttpRequest",
-        ...csrfHeaders(),
-      },
-      body: JSON.stringify(spec),
-    });
-    if (!response.ok) throw new Error(t("error.check", { status: response.status }));
-    const { errors } = await response.json();
-    return Array.isArray(errors) ? problemMessages(errors) : [];
-  }
-
-  // -- Preview ------------------------------------------------------------------
+  // -- Drawing charts -----------------------------------------------------------
 
   let libraries = null;
 
@@ -254,11 +274,36 @@
     return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
 
-  /** The spec as the page will draw it: data filled in, theme applied
-   * (as BaseChartBlock.get_spec does: theme, dark, then the spec's config). */
-  function previewSpec(spec, rows, theme, dark) {
+  const isVega = (spec) => typeof spec?.$schema === "string" && spec.$schema.includes("/vega/");
+
+  /** At most `limit` rows of each dataset: {rows, sampled: [{name, shown, total}]}. */
+  function sampleRows(rowsByName, limit) {
+    const rows = {};
+    const sampled = [];
+    for (const [name, all] of Object.entries(rowsByName)) {
+      if (limit && all.length > limit) {
+        rows[name] = all.slice(0, limit);
+        sampled.push({ name, shown: limit, total: all.length });
+      } else {
+        rows[name] = all;
+      }
+    }
+    return { rows, sampled };
+  }
+
+  /** The spec as the page will draw it: data filled in by name, and the
+   * theme applied (as BaseChartBlock.get_spec does: theme, dark, then the
+   * spec's own config). */
+  function previewSpec(spec, rowsByName, theme, dark) {
     const out = clone(spec);
-    out.datasets = { [spec.data.name]: rows };
+    if (isVega(out)) {
+      for (const entry of Array.isArray(out.data) ? out.data : []) {
+        const external = isObject(entry) && Object.keys(entry).every((k) => k === "name" || k === "format");
+        if (external && entry.name in rowsByName) entry.values = rowsByName[entry.name];
+      }
+    } else {
+      out.datasets = { ...rowsByName, ...(isObject(spec.datasets) ? spec.datasets : {}) };
+    }
     if (theme) {
       const config = deepMerge(theme.config, dark ? theme.dark : null, spec.config);
       if (Object.keys(config).length) out.config = config;
@@ -266,7 +311,68 @@
     return out;
   }
 
-  // -- The lightbox -----------------------------------------------------------
+  function themeFor(config, themeField) {
+    const { themes = {}, defaultTheme } = config;
+    const chosen = themeField?.querySelector("select")?.value;
+    return themes[chosen] || themes[defaultTheme] || null;
+  }
+
+  /** Draw `spec` into `host`, replacing what's there once it's drawn.
+   * Returns {messages, error}; `isCurrent()` false means a newer drawing
+   * has started, so this one is dropped. */
+  async function drawChart(host, spec, { rowsByName, theme, dark, config, isCurrent = () => true }) {
+    await loadLibraries(config);
+    if (!isCurrent()) return { messages: [] };
+    host.dataset.colorScheme = dark ? "dark" : "light";
+    const internal = window.wagtailVega?._internal || {};
+    const { rows, sampled } = sampleRows(rowsByName, config.previewRows || 5000);
+    let full = previewSpec(spec, rows, theme, dark);
+    if (internal.resolveVars) full = internal.resolveVars(full, host, theme?.fallbacks || {});
+    const messages = sampled.map((s) => t("sampled", { shown: s.shown.toLocaleString(), total: s.total.toLocaleString() }));
+    const logged = [];
+    const logger = window.vega.logger(window.vega.Warn);
+    logger.warn = (...args) => {
+      logged.push(args.join(" "));
+      return logger;
+    };
+    logger.error = (...args) => {
+      logged.push(args.map(String).join(" "));
+      return logger;
+    };
+    const options = {
+      ...(config.embedOptions || {}),
+      actions: false,
+      renderer: "svg",
+      defaultStyle: false,
+      tooltip: { disableDefaultStyle: true },
+      ast: true,
+      expr: window.vegaInterpreter.expressionInterpreter,
+      logger,
+      loader: internal.makeLoader ? internal.makeLoader(config.allowedHosts) : undefined,
+    };
+    if (theme?.vega_theme) options.theme = theme.vega_theme;
+    const target = document.createElement("div");
+    target.className = "wagtail-vega__target";
+    host.append(target);
+    try {
+      const result = await window.vegaEmbed(target, full, options);
+      await result.view.runAsync();
+      if (!isCurrent()) {
+        result.view.finalize();
+        target.remove();
+        return { messages: [] };
+      }
+      host.wagtailVegaView?.finalize();
+      host.wagtailVegaView = result.view;
+      for (const child of [...host.children]) if (child !== target) child.remove();
+      return { messages: [...messages, ...logged.map((m) => t("previewNote", { message: m }))] };
+    } catch (e) {
+      target.remove();
+      return { messages: logged, error: e.message };
+    }
+  }
+
+  // -- The editor's dialog ------------------------------------------------------
 
   let uid = 0;
 
@@ -302,7 +408,6 @@
     );
   }
 
-
   /** A value kept from the spec, briefly, e.g. for a placeholder. */
   function keptText(value) {
     if (value === null) return t("keptNone");
@@ -311,39 +416,38 @@
     return t("kept", { value: text });
   }
 
-  /** One opening of the lightbox for one spec field. */
+  /** One opening of the editor for one spec field. */
   class Session {
-    constructor(launcher, textarea, datasets, themeField, extraNames = []) {
+    constructor(launcher, { textarea, dataField, themeField, extraNames }) {
       this.launcher = launcher;
-      // Datasets from code: listed, but there are no rows to build from
-      this.extraNames = extraNames.filter((name) => !datasets.some((d) => d.name === name));
       this.trigger = launcher.button;
       this.textarea = textarea;
-      this.datasets = datasets;
+      this.editor = textarea.wagtailVegaEditor;
+      this.hasDataField = Boolean(dataField);
+      this.datasets = readDatasets(dataField);
+      // Datasets from code: listed, but there are no rows to build from
+      this.extraNames = extraNames.filter((name) => !this.datasets.some((d) => d.name === name));
       this.themeField = themeField;
       this.config = launcher.config;
       this.spec = admin.chartSpec;
       this.id = `wagtail-vega-builder-${++uid}`;
       this.previewToken = 0;
       this.scheme = adminScheme();
-      this.text = textarea.value.trim();
-      this.previous = null;
-      this.opened = { state: null };
-      if (this.text) {
-        try {
-          this.previous = JSON.parse(this.text);
-          this.opened = this.spec.fromSpec(this.previous);
-        } catch {
-          this.opened = { problem: { key: "problem.json" } };
-        }
-      }
-      const wanted = this.opened.dataset;
-      this.datasetName = datasets.some((d) => d.name === wanted) ? wanted : datasets[0].name;
-      this.missingDataset = wanted && wanted !== this.datasetName ? wanted : null;
+      this.rowsByName = {};
+      this.columns = [];
+      this.state = null;
+      this.mode = "loading"; // then visual, pending, unrepresentable or noData
+      this.frozen = null; // {line, error} while the code isn't valid JSON
+      this.current = null; // the spec being previewed
+      this.datasetName = this.datasets[0]?.name || null;
     }
 
     $(selector) {
       return this.dialog.querySelector(selector);
+    }
+
+    get text() {
+      return this.editor.view.state.doc.toString();
     }
 
     // -- Building the dialog ---------------------------------------------------
@@ -355,56 +459,60 @@
         "aria-labelledby": `${id}-title`,
         "aria-describedby": `${id}-status`,
       });
+      const e = (key) => escapeHTML(t(key));
       dialog.innerHTML = `
         <header class="wagtail-vega-builder__header">
-          <h2 class="wagtail-vega-builder__title" id="${id}-title">${escapeHTML(t("title"))}</h2>
-          <div class="wagtail-vega-builder__dataset" data-dataset-picker hidden>
-            <label for="${id}-dataset">${escapeHTML(t("dataset"))}</label>
-            <select id="${id}-dataset" data-dataset></select>
-          </div>
-          <button type="button" class="wagtail-vega-builder__close" data-cancel aria-label="${escapeHTML(t("close"))}">${icon("cross")}</button>
+          <h2 class="wagtail-vega-builder__title" id="${id}-title">${e("title")}</h2>
+          <button type="button" class="wagtail-vega-builder__close" data-close aria-label="${e("closeLabel")}">${icon("cross")}</button>
         </header>
         <div class="wagtail-vega-builder__body">
-          <div class="wagtail-vega-builder__problem" data-problem hidden>
-            <p id="${id}-problem" data-problem-text></p>
-            <p>${escapeHTML(t("problemHelp"))}</p>
-            <div class="wagtail-vega-builder__actions">
-              <button type="button" class="button" data-start-fresh aria-describedby="${id}-problem">${escapeHTML(t("startFresh"))}</button>
+          <div class="wagtail-vega-builder__panes">
+            <div class="wagtail-vega-builder__tabs" role="tablist" aria-label="${e("tabs")}">
+              <button type="button" role="tab" id="${id}-tab-visual" aria-controls="${id}-panel-visual" aria-selected="true" data-tab="visual">${e("tab.visual")}</button>
+              <button type="button" role="tab" id="${id}-tab-code" aria-controls="${id}-panel-code" aria-selected="false" tabindex="-1" data-tab="code">${e("tab.code")}<span class="wagtail-vega-builder__badge" data-code-badge hidden> <span aria-hidden="true">⚠</span><span class="visually-hidden">${e("tab.codeProblems")}</span></span></button>
+            </div>
+            <div class="wagtail-vega-builder__panel" role="tabpanel" id="${id}-panel-visual" aria-labelledby="${id}-tab-visual" data-panel="visual">
+              <div class="wagtail-vega-builder__notice" data-controls-notice hidden>
+                <p id="${id}-notice" data-controls-note></p>
+                <button type="button" class="button button-small" data-start-fresh aria-describedby="${id}-notice" hidden>${e("startFresh")}</button>
+              </div>
+              <fieldset class="wagtail-vega-builder__settings" data-controls-fieldset>
+                <legend class="visually-hidden">${e("controls")}</legend>
+                <div class="wagtail-vega-builder__dataset" data-dataset-picker hidden>
+                  <label for="${id}-dataset">${e("dataset")}</label>
+                  <select id="${id}-dataset" data-dataset></select>
+                </div>
+                <div class="wagtail-vega-builder__controls" data-controls></div>
+              </fieldset>
+            </div>
+            <div class="wagtail-vega-builder__panel wagtail-vega-builder__panel--code" role="tabpanel" id="${id}-panel-code" aria-labelledby="${id}-tab-code" data-panel="code" hidden>
+              <p class="wagtail-vega-builder__hint" id="${id}-code-help">${e("codeHelp")}</p>
+              <div data-code></div>
             </div>
           </div>
-          <div class="wagtail-vega-builder__controls" data-controls hidden></div>
-          <section class="wagtail-vega-builder__preview" data-preview aria-labelledby="${id}-preview-title" hidden>
+          <section class="wagtail-vega-builder__preview" data-preview aria-labelledby="${id}-preview-title">
             <div class="wagtail-vega-builder__preview-header">
-              <h3 id="${id}-preview-title">${escapeHTML(t("preview"))}</h3>
+              <h3 id="${id}-preview-title">${e("preview")}</h3>
               <div class="wagtail-vega-builder__scheme" data-scheme-picker hidden>
-                <label for="${id}-scheme">${escapeHTML(t("colours"))}</label>
+                <label for="${id}-scheme">${e("colours")}</label>
                 <select id="${id}-scheme" data-scheme>
-                  <option value="light">${escapeHTML(t("light"))}</option>
-                  <option value="dark">${escapeHTML(t("dark"))}</option>
+                  <option value="light">${e("light")}</option>
+                  <option value="dark">${e("dark")}</option>
                 </select>
               </div>
             </div>
             <div class="wagtail-vega-builder__chart" data-color-scheme="light" data-chart></div>
             <ul class="wagtail-vega-builder__warnings" data-warnings aria-live="polite"></ul>
-            <details class="wagtail-vega-builder__json">
-              <summary>${escapeHTML(t("json"))}</summary>
-              <pre data-json></pre>
-            </details>
           </section>
         </div>
         <footer class="wagtail-vega-builder__footer">
-          <div class="wagtail-vega-builder__messages" data-messages>
+          <div class="wagtail-vega-builder__messages">
             <p class="wagtail-vega-builder__status" id="${id}-status" role="status"><span data-notice></span> <span data-status></span></p>
             <ul class="wagtail-vega-builder__errors" role="alert" data-errors></ul>
           </div>
-          <div class="wagtail-vega-builder__actions" data-actions>
-            <button type="button" class="button button-secondary" data-cancel>${escapeHTML(t("cancel"))}</button>
-            <button type="button" class="button" data-use disabled>${escapeHTML(t("use"))}</button>
-          </div>
-          <div class="wagtail-vega-builder__actions wagtail-vega-builder__confirm" data-confirm hidden>
-            <p id="${id}-confirm">${escapeHTML(t("confirm"))}</p>
-            <button type="button" class="button button-secondary" data-confirm-back>${escapeHTML(t("keepEditing"))}</button>
-            <button type="button" class="button" data-confirm-replace aria-describedby="${id}-confirm">${escapeHTML(t("replace"))}</button>
+          <div class="wagtail-vega-builder__actions">
+            <button type="button" class="button button-secondary" data-undo disabled>${e("undo")}</button>
+            <button type="button" class="button" data-close>${e("close")}</button>
           </div>
         </footer>`;
       document.body.append(dialog);
@@ -536,10 +644,44 @@
       });
     }
 
-    // -- Opening ------------------------------------------------------------------
+    // -- Tabs -----------------------------------------------------------------------
+
+    setupTabs() {
+      const tabs = [...this.dialog.querySelectorAll("[role=tab]")];
+      for (const tab of tabs) {
+        tab.addEventListener("click", () => this.showTab(tab.dataset.tab));
+        tab.addEventListener("keydown", (event) => {
+          const index = tabs.indexOf(tab);
+          let next = null;
+          if (event.key === "ArrowRight" || event.key === "ArrowDown") next = tabs[(index + 1) % tabs.length];
+          else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = tabs[(index - 1 + tabs.length) % tabs.length];
+          else if (event.key === "Home") next = tabs[0];
+          else if (event.key === "End") next = tabs[tabs.length - 1];
+          if (!next) return;
+          event.preventDefault();
+          this.showTab(next.dataset.tab);
+          next.focus();
+        });
+      }
+    }
+
+    showTab(name) {
+      for (const tab of this.dialog.querySelectorAll("[role=tab]")) {
+        const selected = tab.dataset.tab === name;
+        tab.setAttribute("aria-selected", String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+      }
+      for (const panel of this.dialog.querySelectorAll("[role=tabpanel]")) {
+        panel.hidden = panel.dataset.panel !== name;
+      }
+      if (name === "code") this.editor.view.requestMeasure();
+    }
+
+    // -- Opening and closing ---------------------------------------------------------
 
     open() {
       this.dialog = this.buildDialog();
+      this.setupTabs();
       const select = this.$("[data-dataset]");
       for (const dataset of this.datasets) select.add(new Option(dataset.name, dataset.name));
       for (const name of this.extraNames) {
@@ -547,7 +689,7 @@
         option.disabled = true;
         select.add(option);
       }
-      select.value = this.datasetName;
+      if (this.datasetName) select.value = this.datasetName;
       this.$("[data-dataset-picker]").hidden = this.datasets.length + this.extraNames.length < 2;
       select.addEventListener("change", () => this.switchDataset(select.value));
 
@@ -558,129 +700,76 @@
         this.renderPreview();
       });
 
-      for (const button of this.dialog.querySelectorAll("[data-cancel]")) {
+      for (const button of this.dialog.querySelectorAll("[data-close]")) {
         button.addEventListener("click", () => this.close());
       }
-      this.$("[data-use]").addEventListener("click", () => this.use());
-      this.$("[data-confirm-back]").addEventListener("click", () => this.showConfirm(false));
-      this.$("[data-confirm-replace]").addEventListener("click", () => this.write());
+      this.$("[data-undo]").addEventListener("click", () => this.undo());
       this.$("[data-start-fresh]").addEventListener("click", () => this.startFresh());
       // Escape (native "cancel") and dialog.close() both end up here
       this.dialog.addEventListener("close", () => this.cleanUp());
       this.buildControls();
 
+      // The field's own code editor, in the Code tab while the dialog is open
+      const code = this.$("[data-code]");
+      code.append(this.editor.host);
+      this.editor.host.hidden = false;
+      this.openingText = this.text;
+      this.unsubscribe = [
+        this.editor.onChange((text) => {
+          this.updateUndo();
+          this.fromCode(text);
+        }),
+        this.editor.onProblems((problems) => {
+          this.$("[data-code-badge]").hidden = !problems.some((p) => p.severity === "error");
+        }),
+      ];
+
       document.documentElement.classList.add("wagtail-vega-builder-open");
       this.dialog.showModal();
-      // Start loading the preview's libraries alongside the data
+      this.$("[data-tab=visual]").focus();
+      this.setNotice(t("autosaveNote"));
       loadLibraries(this.config).catch(() => {});
-      this.load(true);
+      this.load();
     }
 
-    async load(first) {
-      const dataset = this.datasets.find((d) => d.name === this.datasetName);
-      this.setErrors([]);
-      this.setStatus(t("loading", { name: dataset.name }));
-      this.$("[data-use]").disabled = true;
-      let rows;
-      try {
-        rows = await loadRows(dataset, this.config);
-        if (!Array.isArray(rows)) throw new Error(t("unreadable", { name: dataset.name }));
-      } catch (e) {
-        if (!this.dialog) return;
-        this.setStatus("");
-        this.setErrors([e.message]);
-        return;
-      }
-      if (!this.dialog || dataset.name !== this.datasetName) return; // closed or switched meanwhile
-      if (!rows.length) {
-        this.setStatus("");
-        this.setErrors([t("noRows", { name: dataset.name })]);
-        return;
-      }
-      this.rows = rows;
-      this.columns = this.spec.describeColumns(rows);
+    async load() {
+      if (this.datasets.length) this.setStatus(t("loading", { name: this.datasets.map((d) => d.name).join(", ") }));
+      const { rows, errors } = await loadAllRows(this.datasets, this.config);
+      if (!this.dialog) return;
+      this.rowsByName = rows;
+      this.loaded = true;
       this.setStatus("");
-      if (first) this.start();
-      else this.afterDatasetChange();
-    }
-
-    start() {
-      const { problem, state } = this.opened;
-      if (problem) {
-        this.$("[data-problem-text]").textContent = t("problem", { problem: message(problem) });
-        this.$("[data-problem]").hidden = false;
-        this.setStatus("");
-        this.setNotice(t("cantOpen"));
-        this.$("[data-start-fresh]").focus();
-        return;
-      }
-      if (state) {
-        this.state = state;
-        this.original = this.spec.toSpec(state, this.datasetName);
-        this.setNotice(
-          !this.missingDataset
-            ? t("opened")
-            : this.extraNames.includes(this.missingDataset)
-              ? t("openedCode", { missing: this.missingDataset, name: this.datasetName })
-              : t("openedMissing", { missing: this.missingDataset, name: this.datasetName }),
-        );
-      } else {
-        this.state = this.spec.initialState(this.columns);
-        this.original = null;
-        this.$("[data-suggestions]").open = true;
-        this.setNotice(t("started"));
-      }
-      this.showBuilder();
-    }
-
-    startFresh() {
-      this.state = this.spec.initialState(this.columns);
-      this.original = null;
-      this.$("[data-problem]").hidden = true;
-      this.$("[data-suggestions]").open = true;
-      this.setNotice(t("startedFresh"));
-      this.showBuilder();
-    }
-
-    showBuilder() {
-      this.$("[data-controls]").hidden = false;
-      this.$("[data-preview]").hidden = false;
-      this.update();
-      // Focus the first control, unless the editor has already moved on
+      this.setErrors(errors);
+      this.fromCode(this.text);
+      this.$("[data-start-fresh]").hidden = this.mode !== "unrepresentable";
+      // Focus the first setting, unless the editor has already moved on
       const active = document.activeElement;
-      if (!active || active === document.body || active.matches("[data-cancel], [data-start-fresh], dialog")) {
-        this.$("[data-prop=mark]").focus();
+      if (this.mode === "visual" || this.mode === "pending") {
+        if (!active || active === document.body || active.matches("[data-tab=visual], dialog")) {
+          (this.$("[data-dataset-picker]").hidden ? this.$("[data-prop=mark]") : this.$("[data-dataset]")).focus();
+        }
       }
     }
 
-    async switchDataset(name) {
-      this.datasetName = name;
-      this.missingDataset = null;
-      if (!this.state && !this.opened.problem) {
-        this.load(true);
-        return;
-      }
-      this.load(false);
+    close() {
+      if (this.dialog?.open) this.dialog.close();
+      else this.cleanUp();
     }
 
-    afterDatasetChange() {
-      if (!this.state) {
-        // Still showing "can't open": nothing to adapt
-        this.setStatus("");
-        return;
-      }
-      const names = new Set(this.columns.map((c) => c.name));
-      const missing = this.spec.specFields(this.state).filter((f) => !names.has(f));
-      if (missing.length) {
-        const fresh = this.spec.initialState(this.columns);
-        this.state.mark = fresh.mark;
-        this.state.arrangement = fresh.arrangement;
-        this.state.channels = fresh.channels;
-        this.setNotice(t("datasetFields", { name: this.datasetName }));
-      } else {
-        this.setNotice(t("datasetNow", { name: this.datasetName }));
-      }
-      this.update();
+    cleanUp() {
+      if (!this.dialog) return;
+      clearTimeout(this.previewTimer);
+      // Nothing's lost: whatever was typed last goes to the field now
+      this.editor.flush();
+      for (const unsubscribe of this.unsubscribe || []) unsubscribe();
+      this.editor.host.hidden = true;
+      this.textarea.after(this.editor.host);
+      this.$("[data-chart]").wagtailVegaView?.finalize();
+      this.dialog.remove();
+      this.dialog = null;
+      document.documentElement.classList.remove("wagtail-vega-builder-open");
+      this.trigger.focus();
+      this.launcher.closed();
     }
 
     // -- Messages ---------------------------------------------------------------
@@ -697,7 +786,177 @@
       this.$("[data-errors]").replaceChildren(...messages.map((m) => h("li", { text: m })));
     }
 
-    // -- Editing ----------------------------------------------------------------
+    announce(text) {
+      this.setStatus(text);
+    }
+
+    // -- One spec, three views ---------------------------------------------------
+
+    columnsFor(name) {
+      return this.spec.describeColumns(this.rowsByName[name] || []);
+    }
+
+    /** Read the code into the settings and preview. */
+    fromCode(text) {
+      // Before the data has loaded, load() reads the code once it has
+      if (this.writing || !this.dialog || !this.loaded) return;
+      const S = this.spec;
+      const trimmed = text.trim();
+      this.frozen = null;
+      this.columns = this.columnsFor(this.datasetName);
+      const usable = this.datasets.some((d) => this.rowsByName[d.name]?.length);
+
+      if (!trimmed || trimmed === "null") {
+        // Nothing yet: offer a suggestion, written once the editor uses it
+        this.current = null;
+        if (!usable) {
+          this.mode = "noData";
+        } else {
+          this.mode = "pending";
+          this.state = S.initialState(this.columns);
+          this.original = null;
+          this.current = S.toSpec(this.state, this.datasetName).spec;
+        }
+        this.showMode();
+        this.schedulePreview();
+        return;
+      }
+
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch (error) {
+        // Keep the settings and preview at the last valid spec
+        const position = Number(/position (\d+)/.exec(error.message)?.[1]);
+        const line = Number.isFinite(position) ? text.slice(0, position).split("\n").length : "?";
+        this.frozen = { line, error: error.message };
+        this.showMode();
+        return;
+      }
+
+      this.current = parsed;
+      const opened = S.fromSpec(parsed);
+      if (opened.problem) {
+        this.mode = "unrepresentable";
+        this.state = null;
+        this.problem = opened.problem;
+      } else if (!usable) {
+        this.mode = "noData";
+        this.state = null;
+      } else {
+        this.mode = "visual";
+        this.state = opened.state;
+        this.missingDataset = null;
+        if (opened.dataset && this.rowsByName[opened.dataset]) {
+          this.datasetName = opened.dataset;
+        } else if (opened.dataset) {
+          this.missingDataset = opened.dataset;
+        }
+        this.$("[data-dataset]").value = this.datasetName;
+        this.columns = this.columnsFor(this.datasetName);
+        // What the settings keep from this spec, to show what changes remove
+        this.original = S.toSpec(this.state, this.datasetName);
+      }
+      this.showMode();
+      this.schedulePreview();
+    }
+
+    /** Show the settings for the current mode: usable, or disabled with why. */
+    showMode() {
+      const fieldset = this.$("[data-controls-fieldset]");
+      const notice = this.$("[data-controls-notice]");
+      const note = this.$("[data-controls-note]");
+      const controls = this.$("[data-controls]");
+      let text = "";
+      let disabled = false;
+      if (this.frozen) {
+        text = t("frozen", this.frozen);
+        disabled = true;
+      } else if (this.mode === "noData") {
+        text = this.hasDataField ? t("noData") : t("codeData");
+        disabled = true;
+      } else if (this.mode === "unrepresentable") {
+        text = t("unrepresentable", { problem: message(this.problem) });
+        disabled = true;
+      } else if (this.mode === "pending") {
+        text = t("pending");
+      } else if (this.missingDataset) {
+        text = this.extraNames.includes(this.missingDataset)
+          ? t("codeDatasetUsed", { missing: this.missingDataset, name: this.datasetName })
+          : t("missingDataset", { missing: this.missingDataset, name: this.datasetName });
+      }
+      note.textContent = text;
+      notice.hidden = !text;
+      notice.classList.toggle("is-blocking", disabled);
+      this.$("[data-start-fresh]").hidden = this.frozen !== null || this.mode !== "unrepresentable";
+      fieldset.disabled = disabled;
+      controls.hidden = !this.state;
+      if (this.state) this.sync();
+      if (this.mode === "pending") this.$("[data-suggestions]").open = true;
+    }
+
+    /** Write the settings' spec into the code (and so the field). */
+    fromControls() {
+      if (!this.state) return;
+      this.sync();
+      const { spec } = this.spec.toSpec(this.state, this.datasetName);
+      const text = JSON.stringify(spec, null, 2);
+      this.writing = true;
+      try {
+        this.editor.setText(text, { userEvent: "input.builder" });
+      } finally {
+        this.writing = false;
+      }
+      // A setting is a finished change: no need to wait for more typing
+      this.editor.flush();
+      this.current = spec;
+      this.mode = "visual";
+      this.missingDataset = null;
+      this.showMode();
+      this.updateUndo();
+      this.schedulePreview();
+    }
+
+    updateUndo() {
+      if (this.dialog) this.$("[data-undo]").disabled = this.text === this.openingText;
+    }
+
+    undo() {
+      this.editor.setText(this.openingText, { userEvent: "input.builder.undo" });
+      this.editor.flush();
+      this.announce(t("undone"));
+      this.updateUndo();
+    }
+
+    startFresh() {
+      this.columns = this.columnsFor(this.datasetName);
+      this.state = this.spec.initialState(this.columns);
+      this.original = null;
+      this.announce(t("startedFresh"));
+      this.fromControls();
+      this.$("[data-prop=mark]").focus();
+    }
+
+    switchDataset(name) {
+      this.datasetName = name;
+      this.columns = this.columnsFor(name);
+      if (!this.state) {
+        this.fromCode(this.text);
+        return;
+      }
+      const names = new Set(this.columns.map((c) => c.name));
+      const missing = this.spec.specFields(this.state).filter((f) => !names.has(f));
+      if (missing.length) {
+        const fresh = this.spec.initialState(this.columns);
+        this.state.mark = fresh.mark;
+        this.state.arrangement = fresh.arrangement;
+        this.state.channels = fresh.channels;
+        this.announce(t("datasetFields", { name }));
+      } else {
+        this.announce(t("datasetNow", { name }));
+      }
+      this.fromControls();
+    }
 
     onControl(el) {
       const S = this.spec;
@@ -757,13 +1016,13 @@
         delete state.extras.height;
         state.height = el.value === "" ? "" : Number(el.value) || "";
       }
-      this.update();
+      this.fromControls();
     }
 
     swap() {
       const { channels } = this.state;
       [channels.x, channels.y] = [channels.y, channels.x];
-      this.update();
+      this.fromControls();
       this.announce(t("swapped"));
     }
 
@@ -771,26 +1030,11 @@
       const suggestion = this.suggestions[index];
       if (!suggestion) return;
       this.spec.applySuggestion(this.state, suggestion, this.columns);
-      this.update();
+      this.fromControls();
       this.announce(t("suggestionApplied", { label: message(suggestion.message) }));
     }
 
-    announce(text) {
-      this.setStatus(text);
-    }
-
     // -- Showing the state --------------------------------------------------------
-
-    update() {
-      this.showConfirm(false);
-      this.setErrors([]);
-      this.sync();
-      // The spec as it is now; the preview follows shortly
-      this.$("[data-json]").textContent = JSON.stringify(this.spec.toSpec(this.state, this.datasetName).spec, null, 2);
-      this.$("[data-use]").disabled = !this.spec.channelsFor(this.state.mark).some((c) => this.spec.hasField(this.state.channels[c]));
-      clearTimeout(this.previewTimer);
-      this.previewTimer = setTimeout(() => this.renderPreview(), PREVIEW_DELAY);
-    }
 
     fieldOptions() {
       const S = this.spec;
@@ -834,8 +1078,7 @@
       $c("[data-suggestions]").hidden = !this.suggestions.length;
 
       // The chart
-      const mark = $c("[data-prop=mark]");
-      setValue(mark, state.mark);
+      setValue($c("[data-prop=mark]"), state.mark);
       const stackable = state.mark === "bar" || state.mark === "area";
       show("arrangement", stackable);
       const arrangement = $c("[data-prop=arrangement]");
@@ -950,35 +1193,25 @@
       const dropped = original.filter((path) => !kept.includes(path));
       const list = (heading, paths) =>
         paths.length
-          ? [
-              h("p", { text: heading }),
-              h("ul", {}, paths.map((path) => h("li", {}, h("code", { text: path })))),
-            ]
+          ? [h("p", { text: heading }), h("ul", {}, paths.map((path) => h("li", {}, h("code", { text: path }))))]
           : [];
-      this.$("[data-kept]").replaceChildren(
-        ...list(t("keptIntro"), kept),
-      );
-      this.$("[data-dropped]").replaceChildren(
-        ...list(t("droppedIntro"), dropped),
-      );
+      this.$("[data-kept]").replaceChildren(...list(t("keptIntro"), kept));
+      this.$("[data-dropped]").replaceChildren(...list(t("droppedIntro"), dropped));
       this.$("[data-kept-section]").hidden = !kept.length && !dropped.length;
     }
 
     // -- Preview ------------------------------------------------------------------
 
-    theme() {
-      const { themes = {}, defaultTheme } = this.config;
-      const chosen = this.themeField?.querySelector("select")?.value;
-      return themes[chosen] || themes[defaultTheme] || null;
+    schedulePreview() {
+      clearTimeout(this.previewTimer);
+      this.previewTimer = setTimeout(() => this.renderPreview(), PREVIEW_DELAY);
     }
 
     async renderPreview() {
-      if (!this.dialog || !this.state) return;
+      if (!this.dialog || !this.current) return;
       const token = ++this.previewToken;
-      const { spec } = this.spec.toSpec(this.state, this.datasetName);
-      const theme = this.theme();
+      const theme = themeFor(this.config, this.themeField);
       this.$("[data-scheme-picker]").hidden = !theme?.dark;
-      const host = this.$("[data-chart]");
       const warnings = this.$("[data-warnings]");
       const show = (messages) => {
         const text = JSON.stringify(messages);
@@ -986,148 +1219,29 @@
         warnings.dataset.text = text;
         warnings.replaceChildren(...messages.map((m) => h("li", { text: m })));
       };
+      let result;
       try {
-        await loadLibraries(this.config);
+        result = await drawChart(this.$("[data-chart]"), this.current, {
+          rowsByName: this.rowsByName,
+          theme,
+          dark: Boolean(theme?.dark) && this.scheme === "dark",
+          config: this.config,
+          isCurrent: () => token === this.previewToken && Boolean(this.dialog),
+        });
       } catch (e) {
-        show([t("previewUnavailable", { error: e.message })]);
+        if (this.dialog) show([t("previewUnavailable", { error: e.message })]);
         return;
       }
       if (token !== this.previewToken || !this.dialog) return;
-
-      const dark = Boolean(theme?.dark) && this.scheme === "dark";
-      host.dataset.colorScheme = dark ? "dark" : "light";
-      const internal = window.wagtailVega?._internal || {};
-      // Large datasets are previewed from a sample; the spec loads them all
-      const limit = this.config.previewRows || 5000;
-      const rows = this.rows.length > limit ? this.rows.slice(0, limit) : this.rows;
-      const sampled = rows === this.rows ? [] : [t("sampled", { shown: limit.toLocaleString(), total: this.rows.length.toLocaleString() })];
-      let full = previewSpec(spec, rows, theme, dark);
-      if (internal.resolveVars) full = internal.resolveVars(full, host, theme?.fallbacks || {});
-      const messages = [];
-      const logger = window.vega.logger(window.vega.Warn);
-      logger.warn = (...args) => {
-        messages.push(args.join(" "));
-        return logger;
-      };
-      logger.error = (...args) => {
-        messages.push(args.map(String).join(" "));
-        return logger;
-      };
-      const options = {
-        ...(this.config.embedOptions || {}),
-        actions: false,
-        renderer: "svg",
-        defaultStyle: false,
-        tooltip: { disableDefaultStyle: true },
-        ast: true,
-        expr: window.vegaInterpreter.expressionInterpreter,
-        logger,
-        loader: internal.makeLoader ? internal.makeLoader(this.config.allowedHosts) : undefined,
-      };
-      if (theme?.vega_theme) options.theme = theme.vega_theme;
-      const target = h("div", { className: "wagtail-vega__target" });
-      host.append(target);
-      try {
-        const result = await window.vegaEmbed(target, full, options);
-        await result.view.runAsync();
-        if (token !== this.previewToken || !this.dialog) {
-          result.view.finalize();
-          target.remove();
-          return;
-        }
-        this.view?.finalize();
-        this.view = result.view;
-        for (const child of [...host.children]) if (child !== target) child.remove();
-        show([...sampled, ...messages.map((m) => t("previewNote", { message: m }))]);
-      } catch (e) {
-        target.remove();
-        if (token !== this.previewToken) return;
-        show([t("previewError", { error: e.message }), ...messages]);
-      }
-    }
-
-    // -- Using the chart ------------------------------------------------------------
-
-    async use() {
-      if (!this.state) return;
-      const { spec } = this.spec.toSpec(this.state, this.datasetName);
-      if (this.previous && this.spec.sameSpec(spec, this.previous)) {
-        this.result = null;
-        this.unchanged = true;
-        this.close();
-        return;
-      }
-      const button = this.$("[data-use]");
-      button.disabled = true;
-      this.setErrors([]);
-      this.setStatus(t("checking"));
-      try {
-        const errors = await checkSpec(spec, this.config);
-        if (errors.length) {
-          this.setStatus("");
-          this.setErrors([t("invalid"), ...errors]);
-          return;
-        }
-      } catch (e) {
-        this.setStatus("");
-        this.setErrors([e.message]);
-        return;
-      } finally {
-        if (this.dialog) button.disabled = false;
-      }
-      if (!this.dialog) return; // closed while the spec was being checked
-      this.setStatus("");
-      this.result = spec;
-      // An empty field (a new block's holds "null") needs no confirmation
-      const current = this.textarea.value.trim();
-      if (current && current !== "null") this.showConfirm(true);
-      else this.write();
-    }
-
-    showConfirm(show) {
-      if (!this.dialog) return;
-      const confirm = this.$("[data-confirm]");
-      if (confirm.hidden === !show) return;
-      confirm.hidden = !show;
-      this.$("[data-actions]").hidden = show;
-      this.$("[data-messages]").hidden = show;
-      this.$(show ? "[data-confirm-replace]" : "[data-use]").focus();
-    }
-
-    write() {
-      if (!this.result) return;
-      this.textarea.value = JSON.stringify(this.result, null, 2);
-      // The contract with editors that enhance the textarea
-      this.textarea.dispatchEvent(new Event("input", { bubbles: true }));
-      this.written = true;
-      this.close();
-    }
-
-    close() {
-      if (this.dialog?.open) this.dialog.close();
-      else this.cleanUp();
-    }
-
-    cleanUp() {
-      if (!this.dialog) return;
-      clearTimeout(this.previewTimer);
-      this.view?.finalize();
-      this.view = null;
-      this.dialog.remove();
-      this.dialog = null;
-      document.documentElement.classList.remove("wagtail-vega-builder-open");
-      this.trigger.focus();
-      let note = "";
-      if (this.written) note = t("note.written");
-      else if (this.unchanged) note = t("note.unchanged");
-      this.launcher.note(note);
+      const notes = this.hasDataField ? [] : [t("field.codeData")];
+      show(result.error ? [t("previewError", { error: result.error }), ...result.messages] : [...notes, ...result.messages]);
     }
   }
 
-  // -- The button on each spec field -----------------------------------------
+  // -- The spec field -----------------------------------------------------------------
 
   class ChartBuilderLauncher extends HTMLElement {
-    /** The spec textarea this button belongs to: a sibling, named by data-for. */
+    /** The spec textarea this belongs to: a sibling, named by data-for. */
     get textarea() {
       const name = this.dataset.for;
       if (!name || !this.parentElement) return null;
@@ -1135,51 +1249,25 @@
     }
 
     connectedCallback() {
-      // The widget renders the textarea first (Wagtail gives a widget's first
-      // element the field's aria-describedby and required, which the code
-      // editor copies), then this. Move above the textarea, and so above the
-      // code editor, which inserts itself right after the textarea. Moving
-      // reconnects the element, so this runs again; the check below stops it.
-      const textarea = this.textarea;
-      if (textarea && textarea.compareDocumentPosition(this) & Node.DOCUMENT_POSITION_FOLLOWING) {
-        textarea.before(this);
-        return;
-      }
       if (this.button) return;
-      // The text is the same for every button on the page
+      // The text is the same for every field on the page
       STRINGS = { ...STRINGS, ...(this.config.strings || {}) };
       this.button = this.querySelector("[data-builder-open]");
       this.noteEl = this.querySelector("[data-builder-note]");
       this.noteEl.id = `wagtail-vega-builder-note-${++uid}`;
-      this.hintEl = this.querySelector("[data-builder-hint]");
-      if (this.hintEl) this.hintEl.id = `wagtail-vega-builder-hint-${uid}`;
+      this.promptEl = this.querySelector("[data-field-empty]");
+      this.promptEl.id = `wagtail-vega-builder-prompt-${uid}`;
       this.button.addEventListener("click", () => this.open());
-      // The spec can change from the code editor, or be set by telepath
-      // after this connects (blocks added after the page loaded)
-      textarea?.addEventListener("input", () => this.showEmpty());
-      textarea?.addEventListener("change", () => this.showEmpty());
-      // StructBlock renders its fields one after another; look for the
-      // datasets field once they're all there.
-      setTimeout(() => {
-        this.showEmpty();
-        this.refresh();
-      });
+      const textarea = this.textarea;
+      textarea?.addEventListener("input", () => this.changed());
+      textarea?.addEventListener("change", () => this.changed());
+      // StructBlock renders its fields one after another, and telepath
+      // attaches the code editor after this connects
+      setTimeout(() => this.setUp());
     }
 
-    /** While the spec is empty, the button is the main action, with a hint. */
-    showEmpty() {
-      const value = this.textarea?.value.trim() ?? "";
-      const empty = (value === "" || value === "null") && !this.button.disabled;
-      this.classList.toggle("is-empty", empty);
-      this.button.classList.toggle("button-secondary", !empty);
-      if (this.hintEl) this.hintEl.hidden = !empty;
-      this.describe();
-    }
-
-    describe() {
-      const ids = [this.hintEl, this.noteEl].filter((el) => el && !el.hidden).map((el) => el.id);
-      if (ids.length) this.button.setAttribute("aria-describedby", ids.join(" "));
-      else this.button.removeAttribute("aria-describedby");
+    disconnectedCallback() {
+      this.observer?.disconnect();
     }
 
     get config() {
@@ -1190,14 +1278,73 @@
       }
     }
 
-    refresh() {
-      const { dataField } = chartContext(this);
-      if (!dataField) {
-        // e.g. a BaseChartBlock subclass whose data comes from code
-        this.button.disabled = true;
-        this.showEmpty();
-        this.note(t("note.codeData"));
+    setUp() {
+      const context = chartContext(this);
+      this.context = context;
+      const editor = context.textarea?.wagtailVegaEditor;
+      if (editor && editor !== this.editor) {
+        this.editor = editor;
+        // Focusing the field (its label, or Wagtail) focuses the button
+        editor.focusTarget = this.button;
+        editor.onProblems((problems) => this.showProblems(problems));
       }
+      // Redraw when the chart's data or theme changes
+      const redraw = () => this.changed({ dataOnly: true });
+      context.dataField?.addEventListener("input", redraw);
+      context.dataField?.addEventListener("change", redraw);
+      context.themeField?.addEventListener("change", redraw);
+      // Draw when the field is first shown (e.g. a collapsed block opened)
+      if ("IntersectionObserver" in window) {
+        this.observer = new IntersectionObserver((entries) => {
+          this.visible = entries.some((entry) => entry.isIntersecting);
+          if (this.visible && this.stale) this.renderField();
+        });
+        this.observer.observe(this);
+      } else {
+        this.visible = true;
+      }
+      this.stale = true;
+      this.showEmpty();
+      if (this.visible) this.renderField();
+    }
+
+    changed() {
+      this.showEmpty();
+      this.stale = true;
+      if (this.session?.dialog) return; // drawn when the editor closes
+      clearTimeout(this.fieldTimer);
+      this.fieldTimer = setTimeout(() => {
+        if (this.visible) this.renderField();
+      }, FIELD_DELAY);
+    }
+
+    closed() {
+      this.session = null;
+      this.stale = true;
+      this.showEmpty();
+      this.renderField();
+    }
+
+    get isEmpty() {
+      const value = this.textarea?.value.trim() ?? "";
+      return value === "" || value === "null";
+    }
+
+    /** While the spec is empty, a prompt instead of the chart, and the
+     * button is the main action. */
+    showEmpty() {
+      const empty = this.isEmpty;
+      this.classList.toggle("is-empty", empty);
+      this.button.classList.toggle("button-secondary", !empty);
+      this.promptEl.hidden = !empty;
+      this.querySelector("[data-field-preview]").hidden = empty;
+      this.describe();
+    }
+
+    describe() {
+      const ids = [this.promptEl, this.noteEl].filter((el) => el && !el.hidden).map((el) => el.id);
+      if (ids.length) this.button.setAttribute("aria-describedby", ids.join(" "));
+      else this.button.removeAttribute("aria-describedby");
     }
 
     note(text) {
@@ -1206,17 +1353,72 @@
       this.describe();
     }
 
+    showProblems(problems) {
+      const box = this.querySelector("[data-field-problems]");
+      const list = this.querySelector("[data-field-problem-list]");
+      list.replaceChildren(
+        ...problems.map((p) => h("li", { className: `is-${p.severity}`, text: t("field.problem", p) })),
+      );
+      box.hidden = !problems.length;
+    }
+
+    /** Draw the field's chart from the spec as it is now. */
+    async renderField() {
+      if (!this.context || this.isEmpty) return;
+      this.stale = false;
+      const token = (this.fieldToken = (this.fieldToken || 0) + 1);
+      const isCurrent = () => token === this.fieldToken;
+      const chart = this.querySelector("[data-field-chart]");
+      const status = this.querySelector("[data-field-status]");
+      let spec;
+      try {
+        spec = JSON.parse(this.textarea.value);
+      } catch {
+        chart.replaceChildren();
+        status.textContent = t("field.invalid");
+        return;
+      }
+      if (!isObject(spec)) {
+        chart.replaceChildren();
+        status.textContent = t("field.invalid");
+        return;
+      }
+      status.textContent = chart.childElementCount ? "" : t("field.loading");
+      const { rows, errors } = await loadAllRows(readDatasets(this.context.dataField), this.config);
+      if (!isCurrent()) return;
+      const theme = themeFor(this.config, this.context.themeField);
+      let result;
+      try {
+        result = await drawChart(chart, spec, {
+          rowsByName: rows,
+          theme,
+          dark: Boolean(theme?.dark) && adminScheme() === "dark",
+          config: this.config,
+          isCurrent,
+        });
+      } catch (e) {
+        status.textContent = t("previewUnavailable", { error: e.message });
+        return;
+      }
+      if (!isCurrent()) return;
+      if (result.error) {
+        chart.replaceChildren();
+        status.textContent = t("field.error", { error: result.error });
+      } else {
+        status.textContent = [...errors, ...(this.context.dataField ? [] : [t("field.codeData")])].join(" ");
+      }
+    }
+
     open() {
-      const { textarea, dataField, themeField, extraNames } = chartContext(this);
-      if (!textarea || !dataField) return this.refresh();
-      if (!admin.chartSpec) return this.note(t("note.scripts"));
-      const datasets = readDatasets(dataField);
-      if (!datasets.length) {
-        this.note(t("note.noData"));
+      const context = chartContext(this);
+      this.context = context;
+      if (!context.textarea?.wagtailVegaEditor || !admin.chartSpec) {
+        this.note(t("note.scripts"));
         return;
       }
       this.note("");
-      new Session(this, textarea, datasets, themeField, extraNames).open();
+      this.session = new Session(this, context);
+      this.session.open();
     }
   }
 
@@ -1226,6 +1428,6 @@
 
   // Internal helpers, exposed for tests. Not a public API.
   admin.chartBuilder = {
-    _internal: { urlAllowed, formatFromUrl, deepMerge, problemMessages, previewSpec, adminScheme, t },
+    _internal: { urlAllowed, formatFromUrl, deepMerge, previewSpec, sampleRows, adminScheme, t },
   };
 })();

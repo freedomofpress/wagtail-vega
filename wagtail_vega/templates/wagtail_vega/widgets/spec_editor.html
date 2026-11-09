@@ -1,14 +1,25 @@
 {% load i18n wagtailadmin_tags %}{% comment %}
 The textarea comes first: Wagtail puts the field's attributes (aria-describedby,
-required) on a widget's first element, and the code editor copies them. The
-button then moves itself above the textarea, and the code editor inserts
-itself right after it. While the spec is empty, the button is the primary
-action and a hint says what it does (chart-builder.js keeps this up to date).
+required) on a widget's first element, and the code editor copies them. It
+stays in the form, hidden, as the value that's saved. The field then shows
+the chart (or, while the spec is empty, a prompt), the spec's problems, and
+the "Edit chart" button, which opens the chart editor (chart-builder.js keeps
+all of this up to date).
 {% endcomment %}{% include "django/forms/widgets/textarea.html" %}{% if builder %}
-<wagtail-vega-chart-builder class="wagtail-vega-spec__toolbar{% if builder_first %} is-empty{% endif %}" data-for="{{ widget.name }}" data-config="{{ builder }}">
-    <button type="button" class="button button-small {% if not builder_first %}button-secondary {% endif %}bicolor button--icon" data-builder-open>
-        <span class="icon-wrapper">{% icon name="wagtail-vega-chart" %}</span>{% translate "Build chart from data" %}
-    </button>
-    <p class="wagtail-vega-spec__hint" data-builder-hint{% if not builder_first %} hidden{% endif %}>{% translate "Pick a chart type and the columns to show, without writing JSON. Or write a Vega or Vega-Lite spec below." %}</p>
-    <p class="wagtail-vega-spec__note" data-builder-note hidden></p>
+<wagtail-vega-chart-builder class="wagtail-vega-field{% if builder_first %} is-empty{% endif %}" data-for="{{ widget.name }}" data-config="{{ builder }}">
+    <p class="wagtail-vega-field__prompt" data-field-empty{% if not builder_first %} hidden{% endif %}>{% translate "No chart yet. Choose “Edit chart” to pick a chart type and the columns to show, without writing JSON, or to write a Vega or Vega-Lite spec." %}</p>
+    <div class="wagtail-vega-field__preview" data-field-preview{% if builder_first %} hidden{% endif %}>
+        <div class="wagtail-vega-field__chart" data-field-chart></div>
+        <p class="wagtail-vega-field__status" data-field-status aria-live="polite"></p>
+    </div>
+    <div class="wagtail-vega-field__problems" data-field-problems hidden>
+        <p>{% translate "The spec has problems. Use “Edit chart” to fix them:" %}</p>
+        <ul data-field-problem-list></ul>
+    </div>
+    <div class="wagtail-vega-field__actions">
+        <button type="button" class="button {% if not builder_first %}button-secondary {% endif %}bicolor button--icon" data-builder-open>
+            <span class="icon-wrapper">{% icon name="wagtail-vega-chart" %}</span>{% translate "Edit chart" %}
+        </button>
+        <p class="wagtail-vega-field__note" data-builder-note hidden></p>
+    </div>
 </wagtail-vega-chart-builder>{% endif %}

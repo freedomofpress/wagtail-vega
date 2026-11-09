@@ -1,6 +1,6 @@
-"""The chart builder, end to end: the real Wagtail admin, driven with the
-keyboard only (Tab, typing, Space, Enter and Esc), then the saved page's
-spec and its chart on the site."""
+"""The chart field and its editor ("Edit chart"), end to end: the real
+Wagtail admin, driven with the keyboard (Tab, arrows, typing, Space, Enter
+and Esc), then the saved page's spec and its chart on the site."""
 
 import json
 import re
@@ -15,7 +15,7 @@ from wagtail.models import Collection
 from tests.testapp.demo import BAR
 from tests.testapp.models import ChartPage
 
-from .editor import fill_editor, set_externally
+from .editor import fill_editor, select_text, set_externally
 
 pytestmark = pytest.mark.e2e
 
@@ -398,20 +398,23 @@ def test_build_with_the_keyboard_and_save(name, editor, chart_page, live_server,
 
     dialog = open_builder(editor, block)
     expect(control(dialog, "mark")).to_be_focused()
-    expect(dialog.locator("[role=status]")).to_contain_text("Started from a suggested chart")
+    # A suggestion is shown, but isn't in the field until a setting changes
+    expect(dialog.locator("[data-controls-notice]")).to_contain_text("isn't in the page yet")
+    assert spec_textarea(editor, block).input_value() == ""
     run_steps(editor, dialog, steps)
     wait_for_preview(dialog)
-    # The spec, shown under the preview, is updated as each control changes
-    assert json.loads(dialog.locator("[data-json]").text_content()) == expected
-    press(editor, dialog.get_by_role("button", name="Use this chart"))
+    # Each setting goes straight into the code, and from there the field
+    assert json.loads(editor_text(editor, block)) == expected
+    expect(spec_textarea(editor, block)).to_have_value(editor_text(editor, block))
+    assert editor.evaluate("window.__inputEvents") >= 1
 
-    # The field was empty, so no confirmation is needed
+    # Esc just closes; focus goes back to the button
+    editor.keyboard.press("Escape")
     expect(dialog).to_have_count(0)
     expect(trigger(editor, block)).to_be_focused()
-    spec = json.loads(spec_textarea(editor, block).input_value())
-    assert spec == expected
-    assert editor_text(editor, block) == spec_textarea(editor, block).input_value()
-    assert editor.evaluate("window.__inputEvents") == 1
+    assert json.loads(spec_textarea(editor, block).input_value()) == expected
+    # The field shows the new chart
+    expect(field_chart(editor, block).locator("svg")).to_have_count(1)
 
     # Save the draft (Ctrl/Cmd+S) and check what was saved
     editor.keyboard.press("ControlOrMeta+s")
@@ -429,144 +432,343 @@ def test_build_with_the_keyboard_and_save(name, editor, chart_page, live_server,
     assert console_errors == []
 
 
-# -- The lightbox ------------------------------------------------------------------------
+# -- The field ---------------------------------------------------------------------------
+
+
+def field_chart(page, index=0):
+    return page.locator(LAUNCHER).nth(index).locator("[data-field-chart]")
+
+
+def field_problems(page, index=0):
+    return page.locator(LAUNCHER).nth(index).locator("[data-field-problems]")
+
+
+def test_the_field_shows_the_chart_not_json(editor, console_errors):
+    field = spec_field(editor)
+    # The textarea is still the field's value, hidden; no code editor inline
+    expect(field.locator("textarea")).to_be_hidden()
+    expect(field.locator(".cm-editor")).to_be_hidden()
+    assert field.locator("textarea").evaluate(
+        "(t) => t === t.parentElement.querySelector('textarea, wagtail-vega-chart-builder')"
+    )
+    # The chart, in the chart's theme (the site default, "house")
+    expect(field_chart(editor).locator("svg")).to_have_count(1)
+    expect(field_chart(editor).locator("svg text").first).to_have_attribute(
+        "font-family", re.compile("Georgia")
+    )
+    expect(field_problems(editor)).to_be_hidden()
+    expect(trigger(editor)).to_have_text("Edit chart")
+    # Every chart on the page is drawn, including the Vega one
+    for index in (REQUESTS, VEGA, WEATHER):
+        expect(field_chart(editor, index).locator("svg")).to_have_count(1)
+    assert console_errors == []
+
+
+def test_the_field_lists_the_specs_problems(editor):
+    bad = {**BAR, "encoding": {**BAR["encoding"], "x": {"field": "quarter", "type": "nominl"}}}
+    set_externally(spec_field(editor), json.dumps(bad, indent=2))
+    problems = field_problems(editor)
+    expect(problems).to_be_visible()
+    expect(problems).to_contain_text("Use “Edit chart” to fix them")
+    expect(problems.locator("li")).to_contain_text([re.compile(r"Line \d+: .*nominl")])
+    # Invalid JSON: no chart, and the syntax error
+    set_externally(spec_field(editor), '{"mark": "bar",}')
+    expect(problems.locator("li")).to_have_count(1)
+    expect(editor.locator(LAUNCHER).first.locator("[data-field-status]")).to_contain_text(
+        "isn't valid JSON"
+    )
+    expect(field_chart(editor)).to_be_empty()
+
+
+def test_the_field_lists_errors_from_a_failed_save(editor):
+    missing = {**BAR, "data": {"name": "nope"}}
+    set_externally(spec_field(editor), json.dumps(missing, indent=2))
+    editor.keyboard.press("ControlOrMeta+s")
+    expect(editor.locator(".messages")).to_contain_text("could not be saved")
+    expect(field_problems(editor).locator("li")).to_contain_text(
+        [re.compile('This chart has no dataset called "nope"')]
+    )
+
+
+def test_empty_spec_makes_edit_chart_the_main_action(editor):
+    launcher = editor.locator(LAUNCHER).first
+    button = launcher.locator("button")
+    prompt = launcher.locator("[data-field-empty]")
+    expect(button).to_have_class(re.compile("button-secondary"))
+    expect(prompt).to_be_hidden()
+    set_externally(spec_field(editor), "")
+    expect(button).not_to_have_class(re.compile("button-secondary"))
+    expect(prompt).to_be_visible()
+    expect(prompt).to_contain_text("without writing JSON")
+    expect(launcher.locator("[data-field-preview]")).to_be_hidden()
+    assert prompt.get_attribute("id") in button.get_attribute("aria-describedby")
+    # New blocks start empty
+    editor.locator("button.c-sf-add-button").last.click()
+    editor.get_by_role("option", name=re.compile(r"^Chart$")).click()
+    new = editor.locator(LAUNCHER).last
+    expect(new.locator("button")).not_to_have_class(re.compile("button-secondary"))
+    expect(new.locator("[data-field-empty]")).to_be_visible()
+    # No Voyager, and no "use" or "replace" step, anywhere
+    for text in ("Voyager", "Use this chart", "Replace spec"):
+        expect(editor.locator("body")).not_to_contain_text(text)
+
+
+# -- The editor ----------------------------------------------------------------------------
 
 
 def test_opens_the_fields_chart(editor, console_errors):
+    textarea = spec_textarea(editor)
+    original = textarea.input_value()
+    count_input_events(editor)
     dialog = open_builder(editor)
     expect(dialog).to_have_attribute("aria-labelledby", re.compile("-title$"))
-    expect(dialog.get_by_role("heading", name="Build a chart from data")).to_be_visible()
-    expect(dialog.locator("[role=status]")).to_contain_text("Opened the field's chart.")
-    # Focus moves to the first control
+    expect(dialog.get_by_role("heading", name="Edit chart")).to_be_visible()
+    # Focus moves to the first setting
     expect(control(dialog, "mark")).to_be_focused()
-    # Grouped bars open as grouped bars (Voyager made them stacked)
+    # Visual is the default tab; the code is one tab away
+    expect(dialog.get_by_role("tab", name="Visual")).to_have_attribute("aria-selected", "true")
+    expect(dialog.get_by_role("tab", name="Code")).to_have_attribute("aria-selected", "false")
+    expect(dialog.locator("[data-panel=code]")).to_be_hidden()
+    # Grouped bars open as grouped bars
     expect(control(dialog, "mark")).to_have_value("bar")
     expect(control(dialog, "arrangement")).to_have_value("grouped")
     expect(control(dialog, "field", "color")).to_have_value("agency")
     expect(control(dialog, "chartTitle")).to_have_value("Requests by quarter")
-    # The hidden axis title isn't something the builder edits: it's kept,
-    # and listed
     expect(dialog.locator("[data-kept]")).to_contain_text("encoding.x.title")
-    expect(control(dialog, "title", "x")).to_have_attribute(
-        "placeholder", "None (kept from the spec)"
-    )
-    # One dataset: no picker
-    expect(dialog.locator("[data-dataset-picker]")).to_be_hidden()
     wait_for_preview(dialog)
-    # The preview uses the chart's theme (the site default, "house")
     expect(dialog.locator("[data-chart] svg text").first).to_have_attribute(
         "font-family", re.compile("Georgia")
     )
-    assert editor.evaluate("document.activeElement.closest('dialog') !== null")
-    assert console_errors == []
-
-
-def test_using_an_unchanged_chart_changes_nothing(editor):
-    textarea = spec_textarea(editor)
-    original = textarea.input_value()
-    count_input_events(editor)
-    dialog = open_builder(editor)
-    wait_for_preview(dialog)
-    press(editor, dialog.get_by_role("button", name="Use this chart"))
+    expect(dialog.locator("[role=status]")).to_contain_text("Changes go into the page")
+    # No "use", "replace" or "cancel" steps
+    for name in ("Use this chart", "Replace spec", "Cancel", "Keep editing"):
+        expect(dialog.get_by_role("button", name=name)).to_have_count(0)
+    # Opening changes nothing
+    expect(dialog.get_by_role("button", name="Undo changes since opening")).to_be_disabled()
+    editor.keyboard.press("Escape")
     expect(dialog).to_have_count(0)
     assert textarea.input_value() == original
     assert editor.evaluate("window.__inputEvents") == 0
-    expect(trigger(editor)).to_be_focused()
-    expect(editor.locator(LAUNCHER).first.locator("[data-builder-note]")).to_have_text(
-        "The chart wasn't changed."
-    )
+    assert console_errors == []
 
 
-def test_confirms_before_replacing_a_spec(editor):
+def test_close_and_escape_just_close(editor):
     textarea = spec_textarea(editor)
-    original = textarea.input_value()
-    count_input_events(editor)
+
+    # Escape from a select, after a change: the change stays
     dialog = open_builder(editor)
-    # Stacked rather than grouped bars
-    choose(editor, control(dialog, "arrangement"), "Stacked")
-    use = dialog.get_by_role("button", name="Use this chart")
-    press(editor, use)
-
-    replace = dialog.get_by_role("button", name="Replace spec")
-    expect(replace).to_be_focused()
-    expect(dialog).to_contain_text("This replaces the spec that's in the field now.")
-    assert textarea.input_value() == original
-
-    press(editor, dialog.get_by_role("button", name="Keep editing"))
-    expect(replace).to_be_hidden()
-    expect(use).to_be_focused()
-    assert textarea.input_value() == original
-
-    press(editor, use)
-    expect(replace).to_be_focused()
-    editor.keyboard.press("Enter")
-    expect(dialog).to_have_count(0)
-    spec = json.loads(textarea.input_value())
-    # Only the grouping changed: everything else, including what the builder
-    # doesn't edit, is as it was
-    assert spec == {**BAR, "encoding": {k: v for k, v in BAR["encoding"].items() if k != "xOffset"}}
-    assert editor.evaluate("window.__inputEvents") == 1
-    assert editor_text(editor) == textarea.input_value()
-    expect(editor.locator(LAUNCHER).first.locator("[data-builder-note]")).to_have_text(
-        "The chart is now in the spec field."
-    )
-
-    # ...and one Ctrl/Cmd+Z in the code editor brings the old spec back
-    spec_field(editor).locator(".cm-content").focus()
-    editor.keyboard.press("ControlOrMeta+z")
-    expect(textarea).to_have_value(original)
-
-
-def test_cancel_and_escape_leave_the_field_unchanged(editor):
-    textarea = spec_textarea(editor)
-    original = textarea.input_value()
-    count_input_events(editor)
-
-    # Cancel button
-    dialog = open_builder(editor)
-    choose(editor, control(dialog, "mark"), "Line")
-    press(editor, dialog.get_by_role("button", name="Cancel"))
-    expect(dialog).to_have_count(0)
-    expect(trigger(editor)).to_be_focused()
-
-    # Escape, from a select
-    dialog = open_builder(editor)
-    choose(editor, control(dialog, "field", "x"), "agency")
+    choose(editor, control(dialog, "mark"), "Point")
     editor.keyboard.press("Escape")
     expect(dialog).to_have_count(0)
     expect(trigger(editor)).to_be_focused()
+    assert json.loads(textarea.input_value())["mark"] == {"type": "point", "tooltip": True}
+    # ...and the field's chart shows it
+    expect(field_chart(editor).locator("svg .mark-symbol")).to_have_count(1)
 
-    # Escape, from a text field
+    # Escape from a text field
     dialog = open_builder(editor)
     type_into(editor, control(dialog, "chartTitle"), "Changed")
     editor.keyboard.press("Escape")
     expect(dialog).to_have_count(0)
     expect(trigger(editor)).to_be_focused()
+    assert json.loads(textarea.input_value())["title"] == "Changed"
+    expect(field_chart(editor)).to_contain_text("Changed")
 
-    # The close button
-    dialog = open_builder(editor)
-    press(editor, dialog.get_by_role("button", name="Close without using the chart"))
-    expect(dialog).to_have_count(0)
-    expect(trigger(editor)).to_be_focused()
-
-    assert textarea.input_value() == original
-    assert editor.evaluate("window.__inputEvents") == 0
+    # The Close button, and the close icon
+    for name in ("Close", "Close the chart editor"):
+        dialog = open_builder(editor)
+        press(editor, dialog.get_by_role("button", name=name, exact=True))
+        expect(dialog).to_have_count(0)
+        expect(trigger(editor)).to_be_focused()
     assert editor.locator(DIALOG).count() == 0
 
 
-def test_changes_list_what_they_remove(editor):
+def test_settings_update_the_code_and_the_code_updates_the_settings(editor):
     dialog = open_builder(editor)
+    choose(editor, control(dialog, "mark"), "Line")
+    # Settings -> code, formatted
+    code = editor_text(editor)
+    assert '"type": "line"' in code
+    assert code == json.dumps(json.loads(code), indent=2)
+    expect(dialog.locator("[data-chart] svg .mark-line").first).to_be_visible()
+
+    # Code -> settings and preview, by keyboard: to the tabs, then the Code tab
+    tab_to(editor, dialog.get_by_role("tab", name="Visual"))
+    editor.keyboard.press("ArrowRight")
+    code_tab = dialog.get_by_role("tab", name="Code")
+    expect(code_tab).to_be_focused()
+    expect(code_tab).to_have_attribute("aria-selected", "true")
+    expect(dialog.locator("[data-panel=visual]")).to_be_hidden()
+    editor.keyboard.press("Tab")
+    content = dialog.locator("[data-code] .cm-content")
+    expect(content).to_be_focused()
+    select_text(spec_field(editor), '"line"')
+    editor.keyboard.type('"area"')
+    expect(dialog.locator("[data-chart] svg .mark-area").first).to_be_visible()
+    editor.keyboard.press("Home")  # (stay in the editor)
+    dialog.get_by_role("tab", name="Visual").focus()
+    editor.keyboard.press("Enter")
+    expect(control(dialog, "mark")).to_have_value("area")
+    # The edit reaches the field (debounced while typing)
+    expect(spec_textarea(editor)).to_have_value(re.compile('"type": "area"'))
+
+
+def test_invalid_json_freezes_the_settings_and_keeps_the_text(editor, console_errors):
+    dialog = open_builder(editor)
+    wait_for_preview(dialog)
+    svg = dialog.locator("[data-chart] svg")
+    before = svg.inner_html()
+    dialog.get_by_role("tab", name="Code").click()
+    select_text(spec_field(editor), '"bar"')
+    editor.keyboard.type('"bar",,')
+    notice = dialog.locator("[data-controls-notice]")
+    expect(notice).to_contain_text("The code isn't valid JSON (line")
+    expect(dialog.locator("[data-controls-fieldset]")).to_be_disabled()
+    # The error is shown in place, and the Code tab says there's a problem
+    expect(dialog.locator(".wagtail-vega-code__status")).to_contain_text("Line")
+    expect(dialog.locator("[data-code-badge]")).to_be_visible()
+    # The invalid text is the field's value: nothing is lost
+    expect(spec_textarea(editor)).to_have_value(re.compile(r'"bar",,'))
+    assert svg.inner_html() == before
+    # Fixing it brings the settings back
+    editor.keyboard.press("Backspace")
+    editor.keyboard.press("Backspace")
+    expect(notice).to_be_hidden()
+    expect(dialog.locator("[data-controls-fieldset]")).to_be_enabled()
+    # Closing with invalid JSON keeps it too
+    editor.keyboard.type(",")
+    editor.keyboard.press("Escape")
+    expect(dialog).to_have_count(0)
+    expect(spec_textarea(editor)).to_have_value(re.compile(r'"bar",'))
+    assert [e for e in console_errors if "autosave" not in e.lower()] == []
+
+
+def test_undo_changes_since_opening(editor):
+    textarea = spec_textarea(editor)
+    original = textarea.input_value()
+    dialog = open_builder(editor)
+    undo = dialog.get_by_role("button", name="Undo changes since opening")
+    expect(undo).to_be_disabled()
+    choose(editor, control(dialog, "arrangement"), "Stacked")
+    type_into(editor, control(dialog, "chartTitle"), "New title")
+    expect(undo).to_be_enabled()
+    assert textarea.input_value() != original
+    press(editor, undo)
+    expect(textarea).to_have_value(original)
+    expect(control(dialog, "arrangement")).to_have_value("grouped")
+    expect(control(dialog, "chartTitle")).to_have_value("Requests by quarter")
+    expect(undo).to_be_disabled()
+    expect(dialog.locator("[role=status]")).to_contain_text("Undid the changes")
+    # Ctrl/Cmd+Z in the code editor undoes edits one at a time
+    choose(editor, control(dialog, "mark"), "Point")
+    dialog.get_by_role("tab", name="Code").click()
+    dialog.locator("[data-code] .cm-content").focus()
+    editor.keyboard.press("ControlOrMeta+z")
+    expect(control(dialog, "mark")).to_have_value("bar")
+    expect(textarea).to_have_value(original)
+
+
+def test_settings_keep_what_they_dont_edit(editor):
+    dialog = open_builder(editor)
+    # Grouped -> stacked: only that changes in the spec
+    choose(editor, control(dialog, "arrangement"), "Stacked")
+    spec = json.loads(spec_textarea(editor).input_value())
+    assert spec == {**BAR, "encoding": {k: v for k, v in BAR["encoding"].items() if k != "xOffset"}}
+    # Changing a field removes its kept settings, and lists them
     dropped = dialog.locator("[data-dropped]")
-    expect(dropped).to_be_empty()
-    # x's kept settings belong to its field: changing it removes them...
     choose(editor, control(dialog, "field", "x"), "agency")
-    expect(dropped).to_contain_text("Your changes remove these parts of the spec:")
     expect(dropped).to_contain_text("encoding.x.title")
-    # ...and changing it back restores them
     editor.wait_for_timeout(1100)  # let the select's type-ahead search end
     choose(editor, control(dialog, "field", "x"), "quarter")
     expect(dropped).to_be_empty()
-    expect(dialog.locator("[data-kept]")).to_contain_text("encoding.x.title")
+
+
+def test_specs_the_settings_cant_show(editor, console_errors):
+    textarea = spec_textarea(editor, VEGA)
+    original = textarea.input_value()
+    dialog = open_builder(editor, VEGA)
+    notice = dialog.locator("[data-controls-notice]")
+    expect(notice).to_contain_text("The visual settings can't show this spec: it's a Vega spec")
+    expect(dialog.locator("[data-controls]")).to_be_hidden()
+    # The code and preview keep working
+    wait_for_preview(dialog)
+    expect(dialog.locator("[data-chart] svg .mark-rect path")).not_to_have_count(0)
+    dialog.get_by_role("tab", name="Code").click()
+    select_text(spec_field(editor, VEGA), "steelblue")
+    editor.keyboard.type("darkred")
+    expect(dialog.locator("[data-chart] svg .mark-rect path").first).to_have_attribute(
+        "fill", "darkred"
+    )
+    expect(textarea).to_have_value(re.compile("darkred"))
+    # ...and a new chart can replace it
+    dialog.get_by_role("tab", name="Visual").click()
+    press(editor, dialog.get_by_role("button", name="Start a new chart"))
+    expect(control(dialog, "mark")).to_be_focused()
+    expect(textarea).to_have_value(re.compile("vega-lite/v6"))
+    # Undo since opening brings back the Vega spec
+    press(editor, dialog.get_by_role("button", name="Undo changes since opening"))
+    expect(textarea).to_have_value(original)
+    expect(notice).to_contain_text("it's a Vega spec")
+    assert console_errors == []
+
+
+def test_layers_open_in_the_code(editor):
+    layered = {"$schema": VL, "data": {"name": "source"}, "layer": [{"mark": "bar"}]}
+    set_externally(spec_field(editor), json.dumps(layered))
+    dialog = open_builder(editor)
+    expect(dialog.locator("[data-controls-notice]")).to_contain_text("it combines several views")
+    editor.keyboard.press("Escape")
+    assert json.loads(spec_textarea(editor).input_value()) == layered
+
+
+def test_autosave_saves_edits_made_in_the_editor(editor, chart_page):
+    """Wagtail's autosave (7.4+) picks up the editor's changes: they're written
+    to the form with "input" events as they're made."""
+    edit_url = reverse("wagtailadmin_pages:edit", args=(chart_page.pk,))
+    before = chart_page.revisions.count()
+    dialog = open_builder(editor)
+
+    def is_autosave(request):
+        return (
+            request.method == "POST"
+            and request.url.endswith(edit_url)
+            and "application/json" in (request.headers.get("accept") or "")
+        )
+
+    with editor.expect_response(lambda r: is_autosave(r.request), timeout=15_000) as info:
+        type_into(editor, control(dialog, "chartTitle"), "Autosaved title")
+    assert info.value.ok
+    page = ChartPage.objects.get(pk=chart_page.pk)
+    assert page.revisions.count() > before
+    revision = page.get_latest_revision_as_object()
+    assert revision.body[0].value["spec"]["title"] == "Autosaved title"
+
+
+def test_autosave_with_invalid_json_loses_nothing(editor, chart_page):
+    """Autosave is refused while the spec isn't valid JSON (Wagtail shows that
+    in its indicator); the text stays in the field and the editor."""
+    edit_url = reverse("wagtailadmin_pages:edit", args=(chart_page.pk,))
+    dialog = open_builder(editor)
+    dialog.get_by_role("tab", name="Code").click()
+    select_text(spec_field(editor), '"Requests by quarter"')
+
+    def is_autosave(response):
+        return response.request.method == "POST" and response.request.url.endswith(edit_url)
+
+    with editor.expect_response(is_autosave, timeout=15_000) as info:
+        editor.keyboard.type('"Half typed')
+        dialog.get_by_role("tab", name="Code").focus()  # blur: written now
+    assert not info.value.ok or info.value.json().get("success") is False
+    expect(spec_textarea(editor)).to_have_value(re.compile('"Half typed'))
+    assert '"Half typed' in editor_text(editor)
+    # Fixing it is autosaved
+    dialog.locator("[data-code] .cm-content").focus()
+    with editor.expect_response(lambda r: is_autosave(r) and r.ok, timeout=15_000):
+        select_text(spec_field(editor), '"Half typed')
+        editor.keyboard.type('"Fixed title"')
+        dialog.get_by_role("tab", name="Code").focus()
+    page = ChartPage.objects.get(pk=chart_page.pk)
+    assert page.get_latest_revision_as_object().body[0].value["spec"]["title"] == "Fixed title"
 
 
 def test_lightbox_is_modal(editor):
@@ -574,8 +776,7 @@ def test_lightbox_is_modal(editor):
     wait_for_preview(dialog)
     assert editor.evaluate("document.querySelector('dialog').matches(':modal')")
     assert editor.evaluate("document.elementFromPoint(5, 5) === document.querySelector('dialog')")
-    # Tabbing on from the last control doesn't reach the page behind
-    dialog.get_by_role("button", name="Use this chart").focus()
+    dialog.get_by_role("button", name="Close", exact=True).focus()
     editor.keyboard.press("Tab")
     assert editor.evaluate(
         "!document.activeElement || document.activeElement === document.body"
@@ -594,7 +795,8 @@ def test_controls_are_labelled(editor):
     assert unlabelled == []
     expect(dialog.get_by_label("Chart type")).to_have_value("bar")
     expect(dialog.get_by_role("group", name="X axis (horizontal)")).to_be_visible()
-    expect(dialog.get_by_role("group", name="Colour")).to_be_visible()
+    expect(dialog.get_by_role("tablist", name="Edit the chart")).to_be_visible()
+    expect(dialog.get_by_role("tabpanel", name="Visual")).to_be_visible()
 
 
 def test_suggestions(editor):
@@ -604,9 +806,8 @@ def test_suggestions(editor):
     expect(suggestions).to_have_attribute("open", "")
     press(editor, dialog.get_by_role("button", name="Pie: share of requests by agency"))
     expect(control(dialog, "mark")).to_have_value("arc")
-    expect(control(dialog, "field", "theta")).to_have_value("requests")
+    expect(spec_textarea(editor)).to_have_value(re.compile('"theta"'))
     expect(dialog.locator("[role=status]")).to_contain_text("Chart set to")
-    wait_for_preview(dialog)
 
 
 def test_preview_in_dark_mode(editor):
@@ -614,53 +815,24 @@ def test_preview_in_dark_mode(editor):
     wait_for_preview(dialog)
     title = dialog.locator("[data-chart] svg .role-title text")
     expect(title).to_have_attribute("fill", "#111")
-    # The house theme has dark settings, so the preview offers them
     choose(editor, dialog.get_by_label("Colours"), "Dark mode")
     expect(title).to_have_attribute("fill", "#fff")
 
 
-def test_cant_open_a_vega_spec(editor):
-    textarea = spec_textarea(editor, VEGA)
-    original = textarea.input_value()
-    dialog = open_builder(editor, VEGA)
-    start = dialog.get_by_role("button", name="Start a new chart")
-    expect(start).to_be_focused()
-    expect(dialog.locator("[data-problem]")).to_contain_text(
-        "The builder can't open the spec that's in the field: it's a Vega spec"
-    )
-    expect(dialog.locator("[data-controls]")).to_be_hidden()
-    expect(dialog.get_by_role("button", name="Use this chart")).to_be_disabled()
-    editor.keyboard.press("Enter")
-    expect(control(dialog, "mark")).to_be_focused()
-    wait_for_preview(dialog)
-    press(editor, dialog.get_by_role("button", name="Use this chart"))
-    # The new chart replaces the Vega spec only when confirmed
-    expect(dialog.get_by_role("button", name="Replace spec")).to_be_focused()
-    assert textarea.input_value() == original
-    editor.keyboard.press("Enter")
-    expect(dialog).to_have_count(0)
-    assert json.loads(textarea.input_value())["$schema"] == VL
-
-
-def test_cant_open_layers(editor):
-    layered = {"$schema": VL, "data": {"name": "source"}, "layer": [{"mark": "bar"}]}
-    set_externally(spec_field(editor), json.dumps(layered))
-    dialog = open_builder(editor)
-    expect(dialog.locator("[data-problem]")).to_contain_text("it combines several views")
-    press(editor, dialog.get_by_role("button", name="Cancel"))
-    assert json.loads(spec_textarea(editor).input_value()) == layered
-
-
-def test_disabled_when_data_comes_from_code(editor):
-    launcher = editor.locator(LAUNCHER).nth(DONATIONS)
-    button = launcher.locator("button")
-    expect(button).to_be_disabled()
-    note = launcher.locator("[data-builder-note]")
-    expect(note).to_have_text(
-        "The chart builder works with datasets added in this form. "
-        "This chart's data comes from code."
-    )
-    expect(button).to_have_attribute("aria-describedby", note.get_attribute("id"))
+def test_charts_with_data_from_code(editor, console_errors):
+    """A BaseChartBlock subclass with no data field: the code and preview
+    work, the visual settings say why they can't."""
+    textarea = spec_textarea(editor, DONATIONS)
+    dialog = open_builder(editor, DONATIONS)
+    expect(dialog.locator("[data-controls-notice]")).to_contain_text("data comes from code")
+    expect(dialog.locator("[data-controls-fieldset]")).to_be_disabled()
+    expect(dialog.locator("[data-warnings]")).to_contain_text("data comes from code")
+    dialog.get_by_role("tab", name="Code").click()
+    select_text(spec_field(editor, DONATIONS), "Donations (from the database)")
+    editor.keyboard.type("Donations by month")
+    editor.keyboard.press("Escape")
+    expect(textarea).to_have_value(re.compile("Donations by month"))
+    assert console_errors == []
 
 
 def test_url_dataset(editor, console_errors):
@@ -677,7 +849,7 @@ def test_url_dataset_on_a_disallowed_host(editor):
     expect(dialog.locator("[data-errors]")).to_contain_text(
         "Data can't be loaded from https://evil.example/data.csv."
     )
-    expect(dialog.get_by_role("button", name="Use this chart")).to_be_disabled()
+    expect(dialog.locator("[data-controls-notice]")).to_contain_text("need a dataset with data")
 
 
 def test_document_dataset(editor, settings, tmp_path):
@@ -701,15 +873,11 @@ def test_document_dataset(editor, settings, tmp_path):
 
 
 def test_datasets_from_code_are_listed_but_not_previewed(editor):
-    """ChartBlock.extra_dataset_names (datasets a subclass adds in code) are in
-    the picker, disabled, since there are no rows to build from."""
-    # What chart-block.js does for a block with extra_dataset_names
     spec_field(editor).evaluate(
         """(el) => el.closest("[data-contentpath]").parentElement
             .setAttribute("data-wagtail-vega-extra-datasets", '["totals"]')"""
     )
-    spec = {**BAR, "data": {"name": "totals"}}
-    set_externally(spec_field(editor), json.dumps(spec))
+    set_externally(spec_field(editor), json.dumps({**BAR, "data": {"name": "totals"}}))
     dialog = open_builder(editor)
     picker = dialog.get_by_label("Dataset")
     expect(picker).to_be_visible()
@@ -717,10 +885,9 @@ def test_datasets_from_code_are_listed_but_not_previewed(editor):
     option = picker.locator('option[value="totals"]')
     expect(option).to_have_text("totals (from code, can't be previewed here)")
     expect(option).to_be_disabled()
-    expect(dialog.locator("[role=status]")).to_contain_text(
-        "It uses “totals”, whose data comes from code"
+    expect(dialog.locator("[data-controls-notice]")).to_contain_text(
+        "The spec uses “totals”, whose data comes from code"
     )
-    wait_for_preview(dialog)
 
 
 def test_several_datasets_offer_a_picker(editor):
@@ -732,93 +899,58 @@ def test_several_datasets_offer_a_picker(editor):
 
     dialog = open_builder(editor)
     picker = dialog.get_by_label("Dataset")
-    expect(picker).to_be_visible()
-    expect(picker).to_have_value("source")  # the one the spec refers to
+    expect(picker).to_be_focused()
+    expect(picker).to_have_value("source")
     wait_for_preview(dialog)
-
     choose(editor, picker, "budget")
     expect(dialog.locator("[role=status]")).to_contain_text("doesn't have the fields")
     expect(control(dialog, "field", "x")).to_contain_text("amount (number)")
     choose(editor, control(dialog, "field", "x"), "year")
     choose(editor, control(dialog, "field", "y"), "amount")
-    press(editor, dialog.get_by_role("button", name="Use this chart"))
-    press(editor, dialog.get_by_role("button", name="Replace spec"))
-    expect(dialog).to_have_count(0)
     spec = json.loads(spec_textarea(editor).input_value())
     assert spec["data"] == {"name": "budget"}
-    # The parts of the spec the builder doesn't edit are kept
     assert spec["title"] == "Requests by quarter"
 
 
-def test_new_chart_blocks_get_the_button(editor):
-    """Blocks added after page load (telepath-rendered) get a working button."""
+def test_new_chart_blocks(editor):
+    """Blocks added after page load (telepath-rendered) work too."""
     editor.locator("button.c-sf-add-button").last.click()
     editor.get_by_role("option", name=re.compile(r"^Chart$")).click()
     launchers = editor.locator(LAUNCHER)
     expect(launchers).to_have_count(5)
-    new = launchers.last
-    new.locator("button").focus()
-    editor.keyboard.press("Enter")
-    # A new chart starts with one empty dataset
-    note = new.locator("[data-builder-note]")
-    expect(note).to_have_text(
-        "Add data to this chart's datasets first, then build the chart from it."
-    )
-    expect(editor.locator(DIALOG)).to_have_count(0)
-
     dataset = editor.locator('[data-contentpath="data"]').last.locator(".wagtail-vega-dataset")
     fill_editor(dataset.locator('[data-contentpath="paste"]'), "fruit,count\napple,3\npear,5")
     dialog = open_builder(editor, 4)
-    expect(note).to_be_hidden()
     wait_for_preview(dialog)
     expect(control(dialog, "field", "x")).to_have_value("fruit")
-    press(editor, dialog.get_by_role("button", name="Use this chart"))
-    expect(dialog.locator("[data-errors]")).to_be_empty()
-    expect(dialog).to_have_count(0)
-    expect(new.locator("button")).to_be_focused()
+    choose(editor, control(dialog, "mark"), "Point")
+    editor.keyboard.press("Escape")
+    expect(launchers.last.locator("button")).to_be_focused()
     spec = json.loads(spec_textarea(editor, 4).input_value())
     assert spec["encoding"]["x"]["field"] == "fruit"
+    expect(field_chart(editor, 4).locator("svg")).to_have_count(1)
 
 
-def test_button_sits_above_the_code_editor(editor):
-    for index in range(4):
-        field = spec_field(editor, index)
-        toolbar = field.locator(LAUNCHER)
-        code = field.locator(".wagtail-vega-code--spec")
-        expect(code).to_be_visible()
-        expect(field.locator("textarea")).to_be_hidden()
-        assert field.locator(".cm-editor").count() == 1
-        top = toolbar.bounding_box()
-        box = code.bounding_box()
-        assert top["y"] + top["height"] <= box["y"] + 1
-    fill_editor(spec_field(editor), '{"a": 1}')
-    expect(spec_textarea(editor)).to_have_value('{"a": 1}')
-
-
-def test_vega_libraries_load_only_when_the_builder_opens(editor):
-    assert editor.evaluate("typeof window.vegaEmbed") == "undefined"
-    dialog = open_builder(editor)
-    wait_for_preview(dialog)
-    assert editor.evaluate("typeof window.vegaEmbed") == "function"
-    press(editor, dialog.get_by_role("button", name="Cancel"))
-    # Opening again doesn't load them twice
-    open_builder(editor)
-    assert editor.locator('script[src*="vega.min.js"]').count() == 1
+def test_label_focuses_the_button(editor):
+    spec_field(editor).locator("label").first.click()
+    expect(trigger(editor)).to_be_focused()
 
 
 def test_narrow_screens(editor):
     editor.set_viewport_size({"width": 390, "height": 844})
     dialog = open_builder(editor)
     wait_for_preview(dialog)
-    # No horizontal scrolling; the preview follows the controls
     assert dialog.evaluate("(d) => d.scrollWidth <= d.clientWidth + 1")
-    controls = dialog.locator("[data-controls]").bounding_box()
+    panes = dialog.locator(".wagtail-vega-builder__panes").bounding_box()
     preview = dialog.locator("[data-preview]").bounding_box()
-    assert preview["y"] >= controls["y"] + controls["height"] - 1
+    assert preview["y"] >= panes["y"] + panes["height"] - 1
+    dialog.get_by_role("tab", name="Code").click()
+    box = dialog.locator("[data-code] .cm-editor").bounding_box()
+    assert box["x"] >= 0 and box["x"] + box["width"] <= 390
 
 
 def test_preview_needs_no_unsafe_eval(admin_page, live_server, chart_page, console_errors):
-    """The builder's preview runs under an admin CSP without 'unsafe-eval'."""
+    """The previews run under an admin CSP without 'unsafe-eval'."""
     url = live_server.url + reverse("wagtailadmin_pages:edit", args=(chart_page.pk,))
 
     def add_csp(route):
@@ -834,7 +966,7 @@ def test_preview_needs_no_unsafe_eval(admin_page, live_server, chart_page, conso
             console.error(`CSP violation: ${e.violatedDirective} ${e.blockedURI}`))"""
     )
     admin_page.goto(url)
-    expect(admin_page.locator(LAUNCHER)).to_have_count(4)
+    expect(field_chart(admin_page).locator("svg")).to_have_count(1)
     dialog = open_builder(admin_page)
     wait_for_preview(dialog)
     choose(admin_page, control(dialog, "mark"), "Line")
@@ -844,7 +976,6 @@ def test_preview_needs_no_unsafe_eval(admin_page, live_server, chart_page, conso
 
 
 def test_large_datasets_are_previewed_from_a_sample(editor):
-    """The preview draws the first rows only; the spec loads them all."""
     editor.locator(LAUNCHER).nth(WEATHER).evaluate(
         "(el) => { el.dataset.config = JSON.stringify({...JSON.parse(el.dataset.config),"
         " previewRows: 10}); }"
@@ -854,31 +985,4 @@ def test_large_datasets_are_previewed_from_a_sample(editor):
     expect(dialog.locator("[data-warnings]")).to_contain_text(
         "The preview shows the first 10 of 48 rows. The chart on the page uses them all."
     )
-    spec = json.loads(dialog.locator("[data-json]").text_content())
-    assert spec["data"] == {"name": "weather"}
-    assert "datasets" not in spec
-
-
-def test_empty_spec_makes_the_builder_the_main_action(editor):
-    launcher = editor.locator(LAUNCHER).first
-    button = launcher.locator("button")
-    hint = launcher.locator("[data-builder-hint]")
-    # A spec: the builder is a secondary action
-    expect(button).to_have_class(re.compile("button-secondary"))
-    expect(hint).to_be_hidden()
-    # No spec: it's the main one, with a hint that says what it does
-    fill_editor(spec_field(editor), "")
-    expect(button).not_to_have_class(re.compile("button-secondary"))
-    expect(hint).to_be_visible()
-    expect(hint).to_contain_text("without writing JSON")
-    assert hint.get_attribute("id") in button.get_attribute("aria-describedby")
-    fill_editor(spec_field(editor), "{}")
-    expect(button).to_have_class(re.compile("button-secondary"))
-    # New blocks start empty
-    editor.locator("button.c-sf-add-button").last.click()
-    editor.get_by_role("option", name=re.compile(r"^Chart$")).click()
-    new = editor.locator(LAUNCHER).last
-    expect(new.locator("button")).not_to_have_class(re.compile("button-secondary"))
-    expect(new.locator("[data-builder-hint]")).to_be_visible()
-    # No Voyager anywhere
-    expect(editor.locator("body")).not_to_contain_text("Voyager")
+    assert "datasets" not in json.loads(editor_text(editor, WEATHER))

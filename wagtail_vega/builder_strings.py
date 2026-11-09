@@ -11,36 +11,56 @@ from django.utils.translation import gettext as _
 
 def builder_strings() -> dict[str, str]:
     strings = {
-        # The button's notes
-        "note.codeData": _(
-            "The chart builder works with datasets added in this form. "
-            "This chart's data comes from code."
+        # The spec field
+        "note.scripts": _("The chart editor's scripts aren't loaded."),
+        "field.loading": _("Drawing the chart…"),
+        "field.invalid": _("The spec isn't valid JSON, so the chart can't be drawn."),
+        "field.error": _("The chart can't be drawn: %(error)s"),
+        "field.problem": _("Line %(line)s: %(message)s"),
+        "field.codeData": _("This chart's data comes from code, so the preview has no data."),
+        # The dialog
+        "title": _("Edit chart"),
+        "close": _("Close"),
+        "closeLabel": _("Close the chart editor"),
+        "autosaveNote": _("Changes go into the page as you make them."),
+        "undo": _("Undo changes since opening"),
+        "undone": _("Undid the changes made since the editor opened."),
+        "tabs": _("Edit the chart"),
+        "tab.visual": _("Visual"),
+        "tab.code": _("Code"),
+        "tab.codeProblems": _("has problems"),
+        "codeHelp": _(
+            "The Vega or Vega-Lite spec, in JSON. Changes here update the visual controls "
+            "and the preview, and changes there update this."
         ),
-        "note.noData": _("Add data to this chart's datasets first, then build the chart from it."),
-        "note.written": _("The chart is now in the spec field."),
-        "note.unchanged": _("The chart wasn't changed."),
-        "note.scripts": _("The chart builder's scripts aren't loaded."),
-        # The lightbox
-        "title": _("Build a chart from data"),
         "dataset": _("Dataset"),
         "codeDataset": _("%(name)s (from code, can't be previewed here)"),
-        "close": _("Close without using the chart"),
-        "problem": _("The builder can't open the spec that's in the field: %(problem)s."),
-        "problemHelp": _(
-            "You can start a new chart from the data instead. The spec in the field is only "
-            "replaced if you choose “Use this chart” and confirm."
+        "controls": _("Chart settings"),
+        "frozen": _(
+            "The code isn't valid JSON (line %(line)s: %(error)s). The settings and preview "
+            "show the last valid chart until it's fixed."
+        ),
+        "unrepresentable": _(
+            "The visual settings can't show this spec: %(problem)s. Keep editing it in the "
+            "code, or start a new chart from the data."
+        ),
+        "noData": _(
+            "The visual settings need a dataset with data in this form. Add data to the "
+            "chart, or edit the spec in the code."
+        ),
+        "codeData": _(
+            "This chart's data comes from code, so the visual settings aren't available. "
+            "Edit the spec in the code."
+        ),
+        "pending": _(
+            "This suggested chart isn't in the page yet: change a setting or pick a "
+            "suggestion to add it."
         ),
         "startFresh": _("Start a new chart"),
         "preview": _("Preview"),
         "colours": _("Colours"),
         "light": _("Light mode"),
         "dark": _("Dark mode"),
-        "json": _("Spec (JSON)"),
-        "cancel": _("Cancel"),
-        "use": _("Use this chart"),
-        "confirm": _("This replaces the spec that's in the field now."),
-        "keepEditing": _("Keep editing"),
-        "replace": _("Replace spec"),
         # The controls
         "suggestions": _("Suggested charts"),
         "suggestionsHelp": _(
@@ -70,7 +90,7 @@ def builder_strings() -> dict[str, str]:
         "heightHint": _("Leave blank for the default."),
         "keptTitle": _("From the current spec"),
         "keptIntro": _(
-            "The builder doesn't edit these parts of the spec. They're kept as they are:"
+            "The settings don't edit these parts of the spec. They're kept as they are:"
         ),
         "droppedIntro": _("Your changes remove these parts of the spec:"),
         # Options
@@ -155,15 +175,15 @@ def builder_strings() -> dict[str, str]:
         "channelTitle.size": _("Legend title"),
         "channelTitle.column": _("Heading"),
         "channelTitle.row": _("Heading"),
-        # Why a spec can't be opened (completes "The builder can't open ...: ")
+        # Why the visual settings can't show a spec (see "unrepresentable")
         "problem.json": _("it isn't valid JSON"),
         "problem.notObject": _("it isn't a JSON object"),
-        "problem.vega": _("it's a Vega spec, and the builder makes Vega-Lite charts"),
+        "problem.vega": _("it's a Vega spec, and the settings make Vega-Lite charts"),
         "problem.noSchema": _("it has no Vega-Lite $schema"),
         "problem.composite": _(
-            "it combines several views (it has “%(key)s”), and the builder makes one view at a time"
+            "it combines several views (it has “%(key)s”), and the settings make one view at a time"
         ),
-        "problem.mark": _("the builder doesn't offer its mark type, “%(mark)s”"),
+        "problem.mark": _("they don't offer its mark type, “%(mark)s”"),
         "problem.noMark": _("it has no mark"),
         "problem.data": _("it doesn't load its data from one of the chart's datasets by name"),
         "problem.encoding": _("its encoding isn't an object"),
@@ -184,19 +204,15 @@ def builder_strings() -> dict[str, str]:
         "loading": _("Loading “%(name)s”…"),
         "noRows": _("“%(name)s” has no rows yet."),
         "unreadable": _("Couldn't read “%(name)s”."),
-        "opened": _("Opened the field's chart."),
-        "openedMissing": _(
-            "Opened the field's chart. It used the dataset “%(missing)s”, which this chart "
-            "doesn't have, so it now uses “%(name)s”."
+        "missingDataset": _(
+            "The spec uses the dataset “%(missing)s”, which this chart doesn't have. "
+            "The settings show “%(name)s”; changing one switches the spec to it."
         ),
-        "openedCode": _(
-            "Opened the field's chart. It uses “%(missing)s”, whose data comes from code and "
-            "can't be previewed here, so the builder shows it with “%(name)s”. Using the chart "
-            "switches it to “%(name)s”."
+        "codeDatasetUsed": _(
+            "The spec uses “%(missing)s”, whose data comes from code and can't be previewed "
+            "here. The settings show “%(name)s”; changing one switches the spec to it."
         ),
-        "started": _("Started from a suggested chart. Change anything below."),
         "startedFresh": _("Started a new chart from a suggestion."),
-        "cantOpen": _("The builder can't open this spec."),
         "datasetFields": _(
             "“%(name)s” doesn't have the fields the chart used, so it starts from a suggestion."
         ),
@@ -206,8 +222,6 @@ def builder_strings() -> dict[str, str]:
         ),
         "swapped": _("Swapped the X and Y axes."),
         "suggestionApplied": _("Chart set to “%(label)s”."),
-        "checking": _("Checking the chart…"),
-        "invalid": _("This chart can't be used as it is:"),
         "previewUnavailable": _("The preview isn't available: %(error)s"),
         "previewError": _("The preview can't be drawn yet: %(error)s"),
         "previewNote": _("Note: %(message)s"),

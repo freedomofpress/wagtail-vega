@@ -54,10 +54,12 @@ class CodeEditor(forms.Textarea):
     editor writes every change back to it. It works in StreamField blocks
     (through the telepath adapter below) and in ordinary forms.
 
-    With ``builder=True`` (``"spec"`` mode only), a "Build chart" button goes
-    above the editor. It opens the chart builder with the chart's data, and
-    writes the chart it builds to the textarea, firing the usual "input"
-    event (see chart-builder.js).
+    With ``builder=True`` (``"spec"`` mode only), the field shows a preview
+    of the chart, its problems, and an "Edit chart" button instead of the
+    inline editor. The button opens the chart editor: visual controls, this
+    code editor and a live preview, all on the same spec, which is written to
+    the textarea as it changes, firing the usual "input" event (see
+    chart-builder.js).
     """
 
     MODES = ("json", "spec", "data")
@@ -76,6 +78,9 @@ class CodeEditor(forms.Textarea):
         config = {"mode": self.mode, "rows": int(self.attrs.get("rows") or 16)}
         if self.mode == "spec":
             config["validateUrl"] = reverse("wagtail_vega_validate_spec")
+        if self.builder:
+            # Shown in the chart editor's dialog rather than inline
+            config["builder"] = True
         return config
 
     def get_context(self, name, value, attrs):
