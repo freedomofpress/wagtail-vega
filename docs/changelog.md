@@ -11,7 +11,7 @@ First release.
 - Themes, with dark mode and CSS custom properties.
 - Data host allowlist, CSP-safe mode and optional server-side rendering.
 - `wagtail-vega:rendered` and `wagtail-vega:error` events; data that fails to load is reported as an error.
-- Translatable chart template text.
+- Translatable text throughout: the chart template, the chart editor (from Python), and the admin scripts' messages (through Django's JavaScript catalogue).
 - `get_api_representation()`, so Wagtail's API returns renderable charts.
 - System checks for theme settings and `Meta.theme`.
 - `dark_fallbacks` in themes, for CSS variables in dark mode where the page's CSS isn't available, such as the admin's chart previews.

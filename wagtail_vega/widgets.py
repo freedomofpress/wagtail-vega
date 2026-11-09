@@ -23,6 +23,16 @@ EDITOR_JS = [
     "wagtail_vega/admin/code-editor.js",
 ]
 EDITOR_CSS = "wagtail_vega/admin/code-editor.css"
+
+
+def admin_js(paths):
+    """Admin scripts, after the catalogue that translates their messages
+    (Django's JavaScriptCatalog for wagtail_vega; it merges into the one the
+    Wagtail admin already loads). Called when media is built, once URLs are
+    loaded."""
+    return [reverse("wagtail_vega_jsi18n"), *paths]
+
+
 BUILDER_JS = ["wagtail_vega/admin/chart-spec.js", "wagtail_vega/admin/chart-builder.js"]
 BUILDER_CSS = "wagtail_vega/admin/chart-builder.css"
 # Loaded by the chart builder the first time it opens, for its preview, so
@@ -127,7 +137,7 @@ class CodeEditor(forms.Textarea):
 
     @property
     def media(self):
-        js, css = list(EDITOR_JS), [EDITOR_CSS]
+        js, css = admin_js(EDITOR_JS), [EDITOR_CSS]
         if self.builder:
             js.extend(BUILDER_JS)
             css.append(BUILDER_CSS)

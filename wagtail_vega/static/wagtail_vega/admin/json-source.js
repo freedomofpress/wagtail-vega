@@ -15,6 +15,13 @@
 (() => {
   "use strict";
 
+  // Translations come from Django's JavaScript catalogue (wagtail_vega's
+  // djangojs domain, loaded by the admin), looked up when a message is made.
+  // Without a catalogue, the English text is used.
+  const gettext = (s) => (window.gettext ? window.gettext(s) : s);
+  const ngettext = (s, p, n) => (window.ngettext ? window.ngettext(s, p, n) : n === 1 ? s : p);
+  const fill = (s, params) => s.replace(/%\((\w+)\)s/g, (m, k) => (k in params ? String(params[k]) : m));
+
   const NUMBER_RE = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][-+]?\d+)?/y;
   const WORD_RE = /[\w$.+-]+/y;
   const ESCAPES = new Set(['"', "\\", "/", "b", "f", "n", "r", "t"]);
@@ -65,19 +72,19 @@
       throw new JSONSourceError(message, from, to);
     };
     const unexpected = (expected) => {
-      if (i >= n) fail(`${expected}, but the text ended`, n, n);
+      if (i >= n) fail(fill(gettext("%(expected)s, but the text ended"), { expected }), n, n);
       const token = text.slice(i, tokenEnd(i));
-      if (text[i] === "'") fail("Strings must use double quotes");
-      if (/^(?:NaN|-?Infinity|undefined)$/.test(token)) fail(`${token} isn't allowed in JSON`);
+      if (text[i] === "'") fail(gettext("Strings must use double quotes"));
+      if (/^(?:NaN|-?Infinity|undefined)$/.test(token)) fail(fill(gettext("%(token)s isn't allowed in JSON"), { token }));
       const shown = token.length > 20 ? `${token.slice(0, 20)}…` : token;
-      fail(`${expected}, but found ${token[0] === '"' ? shown : `'${shown}'`}`);
+      fail(fill(gettext("%(expected)s, but found %(token)s"), { expected, token: token[0] === '"' ? shown : `'${shown}'` }));
     };
 
     function string() {
       const from = i;
       i++; // opening quote
       while (true) {
-        if (i >= n) fail("This string isn't closed", from, n);
+        if (i >= n) fail(gettext("This string isn't closed"), from, n);
         const c = text[i];
         if (c === '"') {
           i++;
@@ -87,18 +94,18 @@
           const e = text[i + 1];
           if (e === "u") {
             if (!/^[0-9a-fA-F]{4}$/.test(text.slice(i + 2, i + 6))) {
-              fail("Invalid \\u escape: it needs four hex digits", i, Math.min(i + 6, n));
+              fail(gettext("Invalid \\u escape: it needs four hex digits"), i, Math.min(i + 6, n));
             }
             i += 6;
           } else if (ESCAPES.has(e)) {
             i += 2;
           } else {
-            fail(`Invalid escape sequence \\${e ?? ""}`, i, Math.min(i + 2, n));
+            fail(fill(gettext("Invalid escape sequence %(escape)s"), { escape: `\\${e ?? ""}` }), i, Math.min(i + 2, n));
           }
         } else if (c === "\n" || c === "\r") {
-          fail("This string isn't closed before the end of the line", from, i);
+          fail(gettext("This string isn't closed before the end of the line"), from, i);
         } else if (c < " ") {
-          fail("Control characters in strings must be escaped", i, i + 1);
+          fail(gettext("Control characters in strings must be escaped"), i, i + 1);
         } else {
           i++;
         }
@@ -112,8 +119,8 @@
       const end = tokenEnd(from);
       if (!match || match[0].length !== end - from) {
         const token = text.slice(from, end);
-        if (/^-?Infinity$/.test(token)) fail(`${token} isn't allowed in JSON`, from, end);
-        fail(`${token} isn't a valid JSON number`, from, end);
+        if (/^-?Infinity$/.test(token)) fail(fill(gettext("%(token)s isn't allowed in JSON"), { token }), from, end);
+        fail(fill(gettext("%(token)s isn't a valid JSON number"), { token }), from, end);
       }
       i += match[0].length;
       return { type: "number", from, to: i };
@@ -132,13 +139,13 @@
         skipSpace();
         if (text[i] !== '"') {
           if (text[i] === "}" && node.entries.length) {
-            fail("Trailing commas aren't allowed in JSON", lastComma(), lastComma() + 1);
+            fail(gettext("Trailing commas aren't allowed in JSON"), lastComma(), lastComma() + 1);
           }
-          unexpected("Expected a property name in double quotes");
+          unexpected(gettext("Expected a property name in double quotes"));
         }
         const key = string();
         skipSpace();
-        if (text[i] !== ":") unexpected("Expected a colon after the property name");
+        if (text[i] !== ":") unexpected(gettext("Expected a colon after the property name"));
         i++;
         node.entries.push({ key: decode(key), keyFrom: key.from, keyTo: key.to, value: value() });
         skipSpace();
@@ -151,7 +158,7 @@
           node.to = i;
           return node;
         }
-        unexpected("Expected a comma or }");
+        unexpected(gettext("Expected a comma or }"));
       }
     }
 
@@ -167,7 +174,7 @@
       while (true) {
         skipSpace();
         if (text[i] === "]" && node.items.length) {
-          fail("Trailing commas aren't allowed in JSON", lastComma(), lastComma() + 1);
+          fail(gettext("Trailing commas aren't allowed in JSON"), lastComma(), lastComma() + 1);
         }
         node.items.push(value());
         skipSpace();
@@ -180,7 +187,7 @@
           node.to = i;
           return node;
         }
-        unexpected("Expected a comma or ]");
+        unexpected(gettext("Expected a comma or ]"));
       }
     }
 
@@ -203,7 +210,7 @@
           return { type, from, to: i };
         }
       }
-      return unexpected("Expected a value");
+      return unexpected(gettext("Expected a value"));
     }
 
     try {
@@ -211,7 +218,7 @@
       if (i >= n) return { root: null, error: null };
       const root = value();
       skipSpace();
-      if (i < n) fail("Unexpected text after the end of the JSON value");
+      if (i < n) fail(gettext("Unexpected text after the end of the JSON value"));
       return { root, error: null };
     } catch (e) {
       if (!(e instanceof JSONSourceError)) throw e;

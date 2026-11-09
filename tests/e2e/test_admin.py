@@ -185,3 +185,27 @@ def test_source_toggle_is_one_segmented_control(editor, scheme):
     assert shape["dividers"] == ["0px", "1px", "1px"]
     assert shape["labelRadii"] == ["0px"] * 3
     assert shape["flush"]
+
+
+def test_admin_messages_are_translatable(editor):
+    """The admin scripts' messages go through Django's JavaScript catalogue
+    (#8): add translations to it and the summary and JSON errors use them."""
+    loaded = editor.evaluate(
+        """() => [...document.scripts].map((s) => s.src).filter((src) =>
+            /wagtail-vega\\/jsi18n\\/|data-format\\.js/.test(src))"""
+    )
+    assert "jsi18n" in loaded[0] and "data-format.js" in loaded[1]  # catalogue first
+    editor.evaluate(
+        """() => Object.assign(django.catalog, {
+            "Comma-separated": "Kommagetrennt",
+            "%(count)s row": ["%(count)s Zeile", "%(count)s Zeilen"],
+            "number": "Zahl",
+            "Trailing commas aren't allowed in JSON": "Kommas am Ende sind nicht erlaubt",
+        })"""
+    )
+    dataset = editor.locator(DATASET).first
+    summary = dataset.locator(".wagtail-vega-summary")
+    fill_paste(dataset, "year,count\n2024,10\n2025,12")
+    expect(summary).to_contain_text("Kommagetrennt · 2 Zeilen · year (Zahl), count (Zahl)")
+    fill_paste(dataset, '[{"a": 1},]')
+    expect(summary).to_contain_text("Kommas am Ende sind nicht erlaubt")
