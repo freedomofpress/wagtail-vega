@@ -52,6 +52,11 @@ def test_parse_text_spreadsheet_paste():
     ]
 
 
+def test_parse_short_long_and_blank_rows():
+    # Mirrored by parseRows in dataset-block.js (tests/js/dataset-block.test.mjs)
+    assert parse_delimited("a,b\n1\n\n2,3,4\n") == [{"a": 1, "b": None}, {"a": 2, "b": 3}]
+
+
 def test_parse_text_json_and_empty():
     assert parse_text('[{"a": 1}]') == [{"a": 1}]
     assert parse_text("   ") == [] and parse_text(None) == []

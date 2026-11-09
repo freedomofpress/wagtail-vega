@@ -39,9 +39,7 @@ from .conf import get_setting
 from .data import DOCUMENT_SUFFIXES, document_rows, parse_text
 from .encoders import VegaJSONEncoder
 from .spec import (
-    SpecError,
     deep_merge,
-    disallowed_urls,
     host_allowed,
     inject_datasets,
     is_remote,
@@ -49,7 +47,8 @@ from .spec import (
     spec_kind,
 )
 from .themes import Theme, get_theme, resolve_css_vars, theme_choices
-from .validation import validate_spec
+from .validation import spec_errors
+from .widgets import SpecTextarea
 
 # --------------------------------------------------------------------------
 # JSON input
@@ -66,13 +65,15 @@ class PrettyJSONField(forms.JSONField):
 class JSONBlock(blocks.FieldBlock):
     """A textarea holding JSON, stored as native JSON in the StreamField."""
 
+    widget_class = forms.Textarea
+
     def __init__(self, required=True, help_text=None, rows=16, validators=(), **kwargs):
         self.field = PrettyJSONField(
             required=required,
             help_text=help_text,
             validators=validators,
             encoder=VegaJSONEncoder,
-            widget=forms.Textarea(
+            widget=self.widget_class(
                 attrs={
                     "rows": rows,
                     "class": "wagtail-vega-json",
@@ -103,9 +104,14 @@ class JSONBlock(blocks.FieldBlock):
 
 
 class SpecBlock(JSONBlock):
-    """A Vega or Vega-Lite specification, validated on save."""
+    """A Vega or Vega-Lite specification, validated on save.
 
-    def __init__(self, **kwargs):
+    The textarea comes with a "Build chart with Voyager" button (see
+    ``SpecTextarea``). Pass ``voyager=False`` to leave it out.
+    """
+
+    def __init__(self, voyager=True, **kwargs):
+        self.widget_class = SpecTextarea if voyager else forms.Textarea
         kwargs.setdefault(
             "help_text",
             _(
@@ -119,15 +125,7 @@ class SpecBlock(JSONBlock):
         value = super().clean(value)
         if value is None:
             return value
-        if not isinstance(value, dict):
-            raise ValidationError(_("The spec must be a JSON object."))
-        try:
-            spec_kind(value)
-            errors = validate_spec(value) if get_setting("VALIDATE_SCHEMA") else []
-        except SpecError as e:
-            raise ValidationError(str(e)) from e
-        blocked = disallowed_urls(value, get_setting("ALLOWED_DATA_HOSTS"))
-        errors += [_("Loading data from %s is not allowed.") % url for url in blocked]
+        errors = spec_errors(value)
         if errors:
             raise ValidationError(errors)
         return value

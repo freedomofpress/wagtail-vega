@@ -7,10 +7,12 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
+from django.utils.translation import gettext as _
 from jsonschema import Draft7Validator
 from jsonschema.exceptions import ValidationError, best_match
 
-from .spec import VEGA, VEGA_LITE, spec_kind
+from .conf import get_setting
+from .spec import VEGA, VEGA_LITE, SpecError, disallowed_urls, spec_kind
 
 SCHEMA_DIR = Path(__file__).parent / "schemas"
 MAX_ERRORS = 5
@@ -50,3 +52,19 @@ def validate_spec(spec: dict[str, Any]) -> list[str]:
         if msg not in messages and not error.context:
             messages.append(msg)
     return messages
+
+
+def spec_errors(spec: Any) -> list[str]:
+    """Everything ``SpecBlock`` checks on save: the spec is an object with a
+    known ``$schema``, valid against the schema (if VALIDATE_SCHEMA is on),
+    and only loads data from allowed hosts."""
+    if not isinstance(spec, dict):
+        return [_("The spec must be a JSON object.")]
+    try:
+        spec_kind(spec)
+        errors = validate_spec(spec) if get_setting("VALIDATE_SCHEMA") else []
+    except SpecError as e:
+        return [str(e)]
+    blocked = disallowed_urls(spec, get_setting("ALLOWED_DATA_HOSTS"))
+    errors += [_("Loading data from %s is not allowed.") % url for url in blocked]
+    return errors
