@@ -2,7 +2,7 @@
 
 [Vega](https://vega.github.io/vega/) and [Vega-Lite](https://vega.github.io/vega-lite/) chart blocks for Wagtail StreamFields.
 
-- **Editors** paste a Vega or Vega-Lite spec and attach data: pasted CSV, JSON or spreadsheet cells, a document, or a URL. They can create new kinds of chart without changing any code.
+- **Editors** paste a Vega or Vega-Lite spec and attach data: pasted CSV, JSON or spreadsheet cells, a document, or a URL. They can create new kinds of chart without changing any code, or [build one visually with Vega Voyager](#building-charts-with-voyager).
 - **Developers** subclass the block to supply data from anywhere, e.g. the database.
 - **Themes** are Vega `config` objects. They can have dark-mode variants and can pull colours from your site's CSS custom properties.
 - **Privacy and security:** the Vega libraries are vendored, so there are no CDN requests. Data hosts are allowlisted, and a CSP-safe mode works without `unsafe-eval`, inline scripts or inline styles.
@@ -62,6 +62,22 @@ Each dataset has a **Paste / Document / URL** toggle, and only the inputs for th
 **Value types:** numbers (including `1,234`), `true`/`false` and blank cells (as `null`) are converted. Values with leading zeros, like ZIP codes, stay as text, and so do dates.
 
 - **Time zones:** Vega parses `2026-01-01` as UTC midnight. Use `utcyearmonth` etc. in `timeUnit`, or the axis may show the previous month.
+
+## Building charts with Voyager
+
+Each spec field has a **Build chart with Voyager** button. It opens [Vega Voyager](https://github.com/vega/voyager) in a lightbox, loaded with the chart's data, so editors can build a chart by dragging fields onto encoding shelves and browsing suggested views.
+
+- **Data** comes from the form as it is now, saved or not: pasted data is parsed in the browser exactly as on the server, documents are read through an admin endpoint, and URL datasets are fetched by the browser (allowlisted hosts only). With several datasets, a picker chooses one.
+- **Opening the current chart:** if the field holds a single-view Vega-Lite spec, Voyager opens with its mark and field encodings. Anything else (Vega, layers, concatenation, parameters…) starts from the data.
+- **Use this chart** converts Voyager's spec to Vega-Lite v6 that refers to the dataset by name (`"data": {"name": "source"}`, never inline data), checks it as saving would, asks before replacing a non-empty spec, and writes it to the field. Its title, description, size and `config` are kept from the spec it replaces.
+- **Cancel**, the close button or <kbd>Esc</kbd> leave the field unchanged.
+- Charts whose data comes from code (a `BaseChartBlock` subclass without a `data` field) have the button disabled, with a note. Pass `SpecBlock(voyager=False)` to leave the button out.
+
+**For code that enhances the spec field** (e.g. a code editor): the `<textarea>` stays the source of truth. Voyager's result is written to its `value`, followed by a bubbling `input` event.
+
+**How it is isolated:** Voyager's last release (2018) uses React 15, vega 4 and vega-lite 2. It runs only in an admin page (`/admin/wagtail-vega/voyager/`), loaded in an iframe with `sandbox="allow-scripts"` (and a matching `Content-Security-Policy: sandbox` header). This gives it an opaque origin: it can't touch the admin's DOM or cookies, and its scripts and styles never load in the admin itself. The admin and the iframe talk with `postMessage`, checking the sending window and origin on both sides. The vendored build adds about 2.6 MB (790 KB gzipped) to the static files, loaded only when the lightbox opens.
+
+The admin views use the Wagtail admin's own access check. The document endpoint also requires permission to choose (or change) the document, and the validation endpoint takes POSTs with a CSRF token.
 
 ## Custom data sources
 
@@ -141,6 +157,11 @@ No styles are injected at runtime: tooltip styles ship in `wagtail-vega.css`, so
   - built-in (`vega:`) themes apply to Vega-Lite specs only.
   - charts whose data comes from a relative URL (e.g. `/media/data.csv`) are left to the browser.
 - **Spec editing:** the admin uses a plain textarea for specs. Live preview works through Wagtail's page preview.
+- **Voyager:**
+  - it is unmaintained, and builds single-view charts from the fields Vega-Lite 2 knew;
+  - building charts in it needs a mouse (drag and drop), and it has no dark theme. The lightbox around it is keyboard-accessible;
+  - it needs `'unsafe-eval'` if the admin page that serves it has a Content-Security-Policy, and `connect-src` for any URL dataset hosts if the admin has one;
+  - large datasets are sent to it whole, which can make it slow.
 
 ## Development
 
@@ -165,8 +186,9 @@ Test layout:
 | --- | --- |
 | `tests/test_*.py` | Unit tests: spec handling, validation, themes, data parsing, blocks, SSR |
 | `tests/test_admin.py` | Creating, validating and previewing chart pages through the Wagtail admin |
-| `tests/e2e/` | Playwright browser tests: the dataset editor UI, plus chart rendering with themes, dark mode, strict CSP, no JS and URL blocking |
-| `tests/js/` | Unit tests for the browser scripts' parsing, type detection and security helpers |
+| `tests/test_voyager.py` | The Voyager admin endpoints (permissions, CSRF, document rows) and the spec widget |
+| `tests/e2e/` | Playwright browser tests: the dataset editor UI and the Voyager lightbox, plus chart rendering with themes, dark mode, strict CSP, no JS and URL blocking |
+| `tests/js/` | Unit tests for the browser scripts' parsing, type detection, Voyager spec conversion and security helpers |
 
 The sandbox site:
 
@@ -177,12 +199,12 @@ WAGTAIL_VEGA_CSP_SAFE=1 WAGTAIL_VEGA_SSR=1 .venv/bin/python manage.py runserver 
 WAGTAIL_VEGA_SANDBOX_AUTOLOGIN=1 .venv/bin/python manage.py runserver  # skip login (for headless screenshots)
 ```
 
-To update the vendored JS and schemas, edit the versions in `scripts/vendor.py` and run it. Each tarball is checked against npm's integrity hash.
+To update the vendored JS and schemas, edit the versions in `scripts/vendor.py` and run it. Each tarball is checked against npm's integrity hash. Voyager and its dependencies are bundled into `vendor/voyager/` with a few exact-match patches, which fail loudly if a new version no longer matches.
 
 ## Roadmap
 
 - A code editor with live preview in the admin.
-- A visual (Voyager-style) chart builder.
+- A maintained, keyboard-accessible visual chart builder to replace Voyager.
 - Developer-defined chart templates that expose only some options to editors.
 - Reusable dataset snippets.
 - A JSON endpoint for large datasets.
