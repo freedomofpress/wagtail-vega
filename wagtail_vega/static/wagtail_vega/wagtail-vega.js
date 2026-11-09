@@ -10,6 +10,10 @@
  * Colour scheme: the nearest [data-color-scheme="light|dark"] ancestor wins,
  * otherwise prefers-color-scheme. After changing a site-level toggle, dispatch
  * `document.dispatchEvent(new Event("wagtail-vega:refresh"))`.
+ *
+ * Events (bubbling, on the <wagtail-vega-chart> element):
+ *   wagtail-vega:rendered  detail: the vega-embed result
+ *   wagtail-vega:error     detail: {error} — the spec failed, or data didn't load
  */
 (() => {
   "use strict";
@@ -21,11 +25,17 @@
     ? window.matchMedia("(prefers-color-scheme: dark)")
     : null;
 
+  // var(--token) is resolved anywhere in the spec except inside data, the
+  // same rule as the server (wagtail_vega.themes.resolve_css_vars).
+  const DATA_KEYS = new Set(["data", "datasets", "values"]);
+
   function resolveVars(value, el, fallbacks) {
     if (Array.isArray(value)) return value.map((v) => resolveVars(v, el, fallbacks));
     if (value && typeof value === "object") {
       const out = {};
-      for (const [k, v] of Object.entries(value)) out[k] = resolveVars(v, el, fallbacks);
+      for (const [k, v] of Object.entries(value)) {
+        out[k] = DATA_KEYS.has(k) ? v : resolveVars(v, el, fallbacks);
+      }
       return out;
     }
     if (typeof value === "string" && value.includes("var(")) {
@@ -52,13 +62,16 @@
     });
   }
 
-  // A loader that refuses non-allowlisted hosts. The server already rejects
-  // literal URLs on save; this also covers URLs built from signals at runtime.
+  // A loader that refuses to fetch from non-allowlisted hosts. The server
+  // already rejects literal URLs on save; this also covers URLs built from
+  // signals at runtime. Hyperlinks (context "href") aren't fetched, so they
+  // only get Vega's own sanitising (which blocks javascript: URLs).
   function makeLoader(allowedHosts) {
     const loader = vega.loader();
     const sanitize = loader.sanitize;
     loader.sanitize = async function (uri, options) {
       const result = await sanitize.call(this, uri, options);
+      if (options?.context === "href") return result;
       const url = new URL(result.href, document.baseURI);
       if (!hostAllowed(url, allowedHosts)) {
         throw new Error(`wagtail-vega: loading ${url.href} is not allowed`);
@@ -108,13 +121,48 @@
     return reader;
   }
 
+  // The eval-free readers are registered under private names, and our specs
+  // are rewritten to use them, so other Vega charts on the page keep Vega's
+  // own readers.
+  const CSP_FORMATS = { csv: "wagtail-vega-csv", tsv: "wagtail-vega-tsv", dsv: "wagtail-vega-dsv" };
   let cspFormatsInstalled = false;
   function installCspSafeFormats() {
     if (cspFormatsInstalled) return;
-    vega.formats("csv", dsvReader(","));
-    vega.formats("tsv", dsvReader("\t"));
-    vega.formats("dsv", dsvReader(null));
+    vega.formats(CSP_FORMATS.csv, dsvReader(","));
+    vega.formats(CSP_FORMATS.tsv, dsvReader("\t"));
+    vega.formats(CSP_FORMATS.dsv, dsvReader(null));
     cspFormatsInstalled = true;
+  }
+
+  function urlExtension(url) {
+    const match = /\.([a-z]+)(?:[?#].*)?$/i.exec(url);
+    return match ? match[1].toLowerCase() : null;
+  }
+
+  // Point delimited-text data at the CSP-safe readers. Returns a new spec.
+  function useCspSafeFormats(node) {
+    if (Array.isArray(node)) return node.map(useCspSafeFormats);
+    if (!node || typeof node !== "object") return node;
+    const out = {};
+    for (const [k, v] of Object.entries(node)) out[k] = useCspSafeFormats(v);
+    const type = out.format?.type ?? (typeof out.url === "string" ? urlExtension(out.url) : null);
+    if ((out.format || typeof out.url === "string") && CSP_FORMATS[type]) {
+      out.format = { ...out.format, type: CSP_FORMATS[type] };
+    }
+    return out;
+  }
+
+  // Vega reports data that fails to load or parse as log warnings, after
+  // vegaEmbed() has resolved. Catch them so the chart can report an error.
+  const DATA_ERROR_RE = /^(Loading failed|Data ingestion failed)/;
+  function makeLogger(onDataError) {
+    const logger = vega.logger(vega.Warn);
+    const warn = logger.warn;
+    logger.warn = function (...args) {
+      if (DATA_ERROR_RE.test(String(args[0]))) onDataError(args);
+      return warn.apply(this, args);
+    };
+    return logger;
   }
 
   class WagtailVegaChart extends HTMLElement {
@@ -144,13 +192,19 @@
     async refresh() {
       const p = this.payload;
       if (!p) return;
-      const spec = structuredClone(p.spec);
+      let spec = structuredClone(p.spec);
       if (p.darkConfig && this.colorScheme === "dark") spec.config = p.darkConfig;
-      if (spec.config) spec.config = resolveVars(spec.config, this, p.fallbacks || {});
+      spec = resolveVars(spec, this, p.fallbacks || {});
 
-      const options = { ...p.embed, loader: makeLoader(p.allowedHosts || []) };
+      const dataErrors = [];
+      const options = {
+        ...p.embed,
+        loader: makeLoader(p.allowedHosts || []),
+        logger: makeLogger((args) => dataErrors.push(args.join(" "))),
+      };
       if (p.cspSafe) {
         installCspSafeFormats();
+        spec = useCspSafeFormats(spec);
         options.ast = true;
         options.expr = window.vegaInterpreter.expressionInterpreter;
       }
@@ -158,21 +212,32 @@
       const target = document.createElement("div");
       target.className = "wagtail-vega__target";
       this.append(target);
+      let embedded = false;
       try {
         const result = await vegaEmbed(target, spec, options);
+        embedded = true;
+        // Wait for data to load, so loading errors are known before we
+        // report success.
+        await result.view.runAsync();
         this.view?.finalize();
         this.view = result.view;
         // Remove the SSR SVG / noscript / previous render
         for (const child of [...this.children]) if (child !== target) child.remove();
+        if (dataErrors.length) throw new Error(dataErrors.join("; "));
         this.classList.remove("has-error");
         this.classList.add("is-rendered");
         this.dispatchEvent(
           new CustomEvent("wagtail-vega:rendered", { bubbles: true, detail: result })
         );
       } catch (error) {
-        target.remove();
+        // A data error still leaves a drawn (if empty) chart; a spec error doesn't
+        if (!embedded) target.remove();
+        this.classList.remove("is-rendered");
         this.classList.add("has-error");
         console.error("wagtail-vega:", error);
+        this.dispatchEvent(
+          new CustomEvent("wagtail-vega:error", { bubbles: true, detail: { error } })
+        );
       }
     }
   }
@@ -182,7 +247,16 @@
   // Internal helpers, exposed for tests. Not a public API.
   window.wagtailVega = {
     ...window.wagtailVega,
-    _internal: { resolveVars, hostAllowed, makeLoader, parseDelimited, dsvReader },
+    _internal: {
+      resolveVars,
+      hostAllowed,
+      makeLoader,
+      makeLogger,
+      parseDelimited,
+      dsvReader,
+      useCspSafeFormats,
+      installCspSafeFormats,
+    },
   };
 
   document.addEventListener("wagtail-vega:refresh", () => {

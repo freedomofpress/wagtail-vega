@@ -38,7 +38,7 @@ The allowlist is copied into each chart's payload so the browser can enforce it.
 Some consequences:
 
 - The browser checks against the page's **origin**, while the server treats any relative URL as allowed. An absolute URL to your own site, like `https://www.example.org/media/data.csv`, is allowed in the browser but rejected on save unless the host is in `ALLOWED_DATA_HOSTS`. Use a relative URL instead.
-- Vega checks [`href`](https://vega.github.io/vega-lite/docs/encoding.html#href) links with the same loader, so links in a chart to hosts that aren't allowed don't open when clicked.
+- The allowlist only covers what charts **load**: data and images. [`href`](https://vega.github.io/vega-lite/docs/encoding.html#href) links in a chart can go anywhere, like any other link on the page. Vega still refuses `javascript:` links.
 - If you change the allowlist, existing pages aren't checked again, but their charts are blocked in the browser from loading from removed hosts.
 
 ## What ends up in the page
@@ -88,5 +88,5 @@ Things to know:
 
 - The interpreter is slower than compiled expressions, which matters for charts with a lot of data or interaction.
 - A few expression functions aren't available in the interpreter. Test charts that use unusual expressions with CSP-safe mode on.
-- The replacement CSV parser is registered on the page's global `vega` object, so it's also used by any other Vega charts on the page.
+- The replacement CSV/TSV parser is registered under its own format names (`wagtail-vega-csv` and so on), and only wagtail-vega's charts are pointed at it. Any other Vega charts on the page keep Vega's own parser.
 - These notes are about the pages your site serves. The Wagtail admin has its own CSP requirements.

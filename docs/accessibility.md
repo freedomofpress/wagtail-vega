@@ -34,4 +34,4 @@ Themes control colours, so check them for contrast and for colour-blind readers,
 
 ## Language
 
-The chart template's own text ("This chart needs JavaScript to display.", "Chart data" and "Showing … of … rows.") is in English and isn't translatable yet. To change it, override the template (see [](frontend.md#overriding-the-template)).
+The chart template's own text ("This chart needs JavaScript to display.", "Chart data" and "Showing … of … rows.") is marked for translation, so it follows the page's active language once translations exist. To change the wording, override the template (see [](frontend.md#overriding-the-template)).

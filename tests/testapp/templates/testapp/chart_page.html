@@ -10,7 +10,12 @@
 <body>
     <main>
         <h1>{{ page.title }}</h1>
+        {% if request.GET.raw %}
+        {# Renders blocks without the template context, as some sites do #}
+        {{ page.body }}
+        {% else %}
         {% for block in page.body %}{% include_block block %}{% endfor %}
+        {% endif %}
     </main>
 </body>
 </html>

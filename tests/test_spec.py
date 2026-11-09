@@ -98,3 +98,19 @@ def test_disallowed_urls_walks_whole_spec(vl_bar):
     ]
     vl_bar["data"] = {"url": "https://ok.org/d.csv"}
     assert disallowed_urls(vl_bar, ["ok.org"]) == ["https://evil.org/a.json"]
+
+
+@pytest.mark.parametrize(
+    "url,fmt,expected",
+    [
+        ("https://x.org/d.csv", None, {"type": "csv"}),
+        ("/media/d.TSV?v=2", None, {"type": "tsv"}),
+        ("https://x.org/api/rows.json#frag", None, {"type": "json"}),
+        ("https://x.org/api/rows", None, None),
+        ("https://x.org/d.csv", "json", {"type": "json"}),
+    ],
+)
+def test_remote_data_infers_format(url, fmt, expected):
+    ref = remote_data(url, fmt)
+    assert ref["url"] == url
+    assert ref.get("format") == expected
