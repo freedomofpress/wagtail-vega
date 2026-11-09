@@ -31,6 +31,7 @@ from django.utils.html import json_script
 from django.utils.translation import gettext_lazy as _
 from wagtail import blocks
 from wagtail.admin.telepath import register
+from wagtail.blocks.field_block import FieldBlockAdapter
 from wagtail.blocks.struct_block import StructBlockAdapter, StructBlockValidationError
 from wagtail.documents.blocks import DocumentChooserBlock
 
@@ -47,8 +48,8 @@ from .spec import (
     spec_kind,
 )
 from .themes import Theme, get_theme, resolve_css_vars, theme_choices
-from .validation import spec_errors
-from .widgets import SpecTextarea
+from .validation import spec_problems
+from .widgets import EDITOR_JS, CodeEditor
 
 # --------------------------------------------------------------------------
 # JSON input
@@ -63,9 +64,10 @@ class PrettyJSONField(forms.JSONField):
 
 
 class JSONBlock(blocks.FieldBlock):
-    """A textarea holding JSON, stored as native JSON in the StreamField."""
+    """JSON in a code editor, stored as native JSON in the StreamField."""
 
-    widget_class = forms.Textarea
+    editor_mode = "json"
+    voyager = False
 
     def __init__(self, required=True, help_text=None, rows=16, validators=(), **kwargs):
         self.field = PrettyJSONField(
@@ -73,14 +75,10 @@ class JSONBlock(blocks.FieldBlock):
             help_text=help_text,
             validators=validators,
             encoder=VegaJSONEncoder,
-            widget=self.widget_class(
-                attrs={
-                    "rows": rows,
-                    "class": "wagtail-vega-json",
-                    "spellcheck": "false",
-                    "autocomplete": "off",
-                    "style": "font-family: monospace;",
-                }
+            widget=CodeEditor(
+                mode=self.editor_mode,
+                attrs={"rows": rows, "class": "wagtail-vega-json"},
+                voyager=self.voyager,
             ),
         )
         super().__init__(**kwargs)
@@ -104,14 +102,15 @@ class JSONBlock(blocks.FieldBlock):
 
 
 class SpecBlock(JSONBlock):
-    """A Vega or Vega-Lite specification, validated on save.
+    """A Vega or Vega-Lite specification, validated on save (and live, in the
+    editor)."""
 
-    The textarea comes with a "Build chart with Voyager" button (see
-    ``SpecTextarea``). Pass ``voyager=False`` to leave it out.
-    """
+    editor_mode = "spec"
 
     def __init__(self, voyager=True, **kwargs):
-        self.widget_class = SpecTextarea if voyager else forms.Textarea
+        # A "Build chart with Voyager" button above the editor (see
+        # widgets.CodeEditor); voyager=False leaves it out.
+        self.voyager = voyager
         kwargs.setdefault(
             "help_text",
             _(
@@ -125,10 +124,24 @@ class SpecBlock(JSONBlock):
         value = super().clean(value)
         if value is None:
             return value
-        errors = spec_errors(value)
-        if errors:
-            raise ValidationError(errors)
+        problems = spec_problems(value)
+        if problems:
+            raise ValidationError([str(p) for p in problems])
         return value
+
+
+class CodeFieldBlockAdapter(FieldBlockAdapter):
+    """Passes the block's server-side errors to its code editor, which
+    highlights each one at the JSON path it starts with."""
+
+    js_constructor = "wagtail_vega.blocks.CodeFieldBlock"
+
+    @cached_property
+    def media(self):
+        return super().media + forms.Media(js=EDITOR_JS)
+
+
+register(CodeFieldBlockAdapter(), JSONBlock)
 
 
 # --------------------------------------------------------------------------
@@ -155,6 +168,23 @@ class DataURLBlock(blocks.CharBlock):
             _("A full URL on an allowed host, or a path on this site such as /media/data.csv."),
         )
         super().__init__(**kwargs)
+
+
+class PastedDataBlock(blocks.TextBlock):
+    """Pasted CSV, TSV or JSON, edited in a code editor that shows tabs, doesn't
+    wrap lines, and marks ragged rows and JSON errors."""
+
+    @cached_property
+    def field(self):
+        widget = CodeEditor(mode="data", attrs={"rows": self.rows})
+        return forms.CharField(widget=widget, **self.field_options)
+
+    def deconstruct(self):
+        # Only the widget differs from TextBlock, so migrations record a
+        # TextBlock. Projects that used DatasetBlock before PastedDataBlock
+        # existed then don't get a no-op migration.
+        _path, args, kwargs = super().deconstruct()
+        return "wagtail.blocks.TextBlock", args, kwargs
 
 
 class DocumentDataBlock(DocumentChooserBlock):
@@ -186,7 +216,7 @@ class DatasetBlock(blocks.StructBlock):
         widget=forms.RadioSelect,
         label=_("Source"),
     )
-    paste = blocks.TextBlock(
+    paste = PastedDataBlock(
         required=False,
         rows=8,
         label=_("Data"),
@@ -261,7 +291,12 @@ class DatasetBlockAdapter(StructBlockAdapter):
     def media(self):
         media = super().media
         return forms.Media(
-            js=[*media._js, "wagtail_vega/admin/dataset-block.js"],
+            js=[
+                *media._js,
+                "wagtail_vega/admin/json-source.js",
+                "wagtail_vega/admin/data-format.js",
+                "wagtail_vega/admin/dataset-block.js",
+            ],
             css={"all": ["wagtail_vega/admin/dataset-block.css"]},
         )
 

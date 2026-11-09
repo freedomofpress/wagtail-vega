@@ -1,13 +1,14 @@
-{% load wagtail_vega %}{% wagtail_vega_assets %}
+{% load i18n wagtail_vega %}{% wagtail_vega_assets %}
 <figure class="wagtail-vega" id="{{ chart.id }}"{% if chart.description %} aria-describedby="{{ chart.id }}-description"{% endif %}>
-    <wagtail-vega-chart class="wagtail-vega__chart" data-payload="{{ chart.payload_id }}">
-        {% if chart.svg %}<div class="wagtail-vega__ssr">{{ chart.svg|safe }}</div>{% else %}<noscript><p class="wagtail-vega__noscript">This chart needs JavaScript to display.</p></noscript>{% endif %}
-    </wagtail-vega-chart>
+    {# The payload comes first, so it's in the DOM when the element is upgraded #}
     {{ chart.payload_script }}
+    <wagtail-vega-chart class="wagtail-vega__chart" data-payload="{{ chart.payload_id }}">
+        {% if chart.svg %}<div class="wagtail-vega__ssr">{{ chart.svg|safe }}</div>{% else %}<noscript><p class="wagtail-vega__noscript">{% translate "This chart needs JavaScript to display." %}</p></noscript>{% endif %}
+    </wagtail-vega-chart>
     {% if chart.description %}<p class="wagtail-vega__description" id="{{ chart.id }}-description">{{ chart.description }}</p>{% endif %}
     {% if chart.tables %}
     <details class="wagtail-vega__data">
-        <summary>Chart data</summary>
+        <summary>{% translate "Chart data" %}</summary>
         {% for table in chart.tables %}
         <table>
             {% if chart.tables|length > 1 %}<caption>{{ table.name }}</caption>{% endif %}
@@ -16,7 +17,7 @@
                 {% for row in table.rows %}<tr>{% for cell in row %}<td>{{ cell|default_if_none:"" }}</td>{% endfor %}</tr>{% endfor %}
             </tbody>
         </table>
-        {% if table.truncated %}<p>Showing {{ table.rows|length }} of {{ table.total }} rows.</p>{% endif %}
+        {% if table.truncated %}<p>{% blocktranslate count total=table.total with shown=table.rows|length %}Showing {{ shown }} of {{ total }} row.{% plural %}Showing {{ shown }} of {{ total }} rows.{% endblocktranslate %}</p>{% endif %}
         {% endfor %}
     </details>
     {% endif %}

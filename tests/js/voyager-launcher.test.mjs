@@ -4,8 +4,21 @@ import { test } from "node:test";
 import { loadVoyagerLauncher, plain } from "./load.mjs";
 
 const window = loadVoyagerLauncher();
-const { toVoyagerSpec, fromVoyagerSpec, urlAllowed, formatFromUrl } =
+const { toVoyagerSpec, fromVoyagerSpec, urlAllowed, formatFromUrl, problemMessages } =
   window.wagtailVegaVoyager._internal;
+
+test("problemMessages formats validate-spec errors like a failed save", () => {
+  assert.deepEqual(
+    plain(
+      problemMessages([
+        { path: ["encoding", "x", "type"], message: "bad type" },
+        { path: [], message: "whole spec" },
+        { message: "no path" },
+      ]),
+    ),
+    ["encoding.x.type: bad type", "whole spec", "no path"],
+  );
+});
 
 const VL6 = "https://vega.github.io/schema/vega-lite/v6.json";
 // Shared with tests/test_voyager_specs.py, which validates every "expected"

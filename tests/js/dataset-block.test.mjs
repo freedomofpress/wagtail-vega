@@ -4,7 +4,7 @@ import { loadAdmin, plain } from "./load.mjs";
 
 const { window, registered } = loadAdmin();
 const { detectFormat, parseDelimited, valueType, columnType, summarise, coerce, parseRows } =
-  window.wagtailVegaAdmin._internal;
+  window.wagtailVegaAdmin.dataFormat;
 
 test("registers the telepath definition", () => {
   assert.equal(typeof registered["wagtail_vega.blocks.DatasetBlock"], "function");
@@ -124,4 +124,54 @@ test("summarise: long column lists are truncated", () => {
   const header = Array.from({ length: 10 }, (_, i) => `c${i}`).join(",");
   const result = summarise(`${header}\n${"1,".repeat(9)}1`);
   assert.match(result.message, /, and 2 more$/);
+});
+
+// -- Problems marked in the paste field's editor ------------------------------
+
+const { diagnose } = window.wagtailVegaAdmin.dataFormat;
+const marked = (text) => diagnose(text).map((d) => [d.severity, text.slice(d.from, d.to), d.message]);
+
+test("diagnose: ragged rows are marked on their line", () => {
+  const text = "year,count\n2024,10\n2025\n2026,12,9\n";
+  assert.deepEqual(plain(marked(text)), [
+    ["warning", "2025", "Line 3 has 1 value but there are 2 columns."],
+    ["warning", "2026,12,9", "Line 4 has 3 values but there are 2 columns."],
+  ]);
+  assert.match(summarise(text).warning, /^Line 3 has 1 value .* 1 more row has problems too\.$/);
+});
+
+test("diagnose: line numbers count leading blank lines, CRLF and quoted newlines", () => {
+  assert.deepEqual(plain(marked("\n\na\tb\r\n1\r\n")), [
+    ["warning", "1", "Line 4 has 1 value but there are 2 columns."],
+  ]);
+  assert.deepEqual(plain(marked('a,b\n"x\ny",1\n2\n')), [
+    ["warning", "2", "Line 4 has 1 value but there are 2 columns."],
+  ]);
+});
+
+test("diagnose: blank lines are skipped, like the server's csv module", () => {
+  assert.deepEqual(plain(diagnose("a,b\n1,2\n\n3,4\n")), []);
+  assert.match(summarise("a,b\n1,2\n\n3,4\n").message, /2 rows/);
+});
+
+test("diagnose: JSON syntax errors at their location", () => {
+  const text = '[\n  {"a": 1},\n  {"a": 2,}\n]';
+  assert.deepEqual(plain(marked(text)), [["error", ",", "Trailing commas aren't allowed in JSON"]]);
+  assert.equal(
+    summarise(text).message,
+    "This looks like JSON but couldn't be read: Trailing commas aren't allowed in JSON (line 3, column 10).",
+  );
+});
+
+test("diagnose: JSON that isn't rows", () => {
+  assert.deepEqual(plain(marked('{"a": 1}')), [["error", "{", "JSON data must be an array of rows."]]);
+  assert.deepEqual(plain(marked('{"values": [{"a": 1}, 2]}')), [
+    ["warning", "2", 'Each row should be an object, like {"name": value}.'],
+  ]);
+  assert.deepEqual(plain(diagnose('﻿[{"a": 1}]')), []);
+});
+
+test("diagnose: nothing to say", () => {
+  assert.deepEqual(plain(diagnose("")), []);
+  assert.deepEqual(plain(diagnose("quarter\trequests\nQ1\t1,200\n")), []);
 });

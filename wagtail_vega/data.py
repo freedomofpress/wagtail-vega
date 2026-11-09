@@ -12,7 +12,7 @@ from typing import Any
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 
-# Keep these in sync with static/wagtail_vega/admin/dataset-block.js
+# Keep these in sync with static/wagtail_vega/admin/data-format.js
 NUMBER_RE = re.compile(r"^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$")
 # "1,234" / "1,234,567.89", as copied from a formatted spreadsheet
 THOUSANDS_RE = re.compile(r"^[-+]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$")
@@ -48,6 +48,8 @@ def _coerce(value: str) -> Any:
 
 
 def parse_delimited(text: str, delimiter: str = ",") -> list[dict[str, Any]]:
+    """Parse delimited text with a header row into a list of dicts, inferring
+    numbers, booleans and nulls."""
     reader = csv.DictReader(io.StringIO(text.strip()), delimiter=delimiter)
     if not reader.fieldnames:
         return []
@@ -55,6 +57,7 @@ def parse_delimited(text: str, delimiter: str = ",") -> list[dict[str, Any]]:
 
 
 def parse_json(text: str | list | dict) -> list[Any]:
+    """Parse a JSON array of rows, or an object with a ``values`` array."""
     data = json.loads(text) if isinstance(text, str) else text
     if isinstance(data, dict) and "values" in data:
         data = data["values"]
@@ -95,6 +98,7 @@ def parse_text(text: str | None) -> list[Any]:
 
 
 def parse_bytes(content: bytes, filename: str) -> list[Any]:
+    """Parse a UTF-8 ``.csv``, ``.tsv`` or ``.json`` file, by its suffix."""
     suffix = PurePath(filename).suffix.lower()
     text = content.decode("utf-8-sig")
     if suffix == ".json":

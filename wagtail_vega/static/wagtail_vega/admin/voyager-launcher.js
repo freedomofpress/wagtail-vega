@@ -3,7 +3,8 @@
  * A button on each spec field opens Vega Voyager in a lightbox, loaded with
  * one of the chart's datasets (read from the unsaved form). "Use this chart"
  * converts Voyager's spec to Vega-Lite v6 that refers to the dataset by
- * name, checks it with the server, and writes it to the spec textarea.
+ * name, checks it with the server (validate-spec, the endpoint the code
+ * editor uses for live validation), and writes it to the spec textarea.
  *
  * Voyager runs in a sandboxed iframe (wagtail_vega/views.py), which talks
  * to this page with postMessage. Every message is an object
@@ -22,8 +23,13 @@
  * it's ready. The frame accepts messages only from its parent at this
  * page's origin, and sends only to that origin.
  *
- * Writing the result: textarea.value is set and a bubbling "input" event
- * dispatched. Code editors that enhance the textarea should listen for it.
+ * Writing the result follows code-editor.js's contract: textarea.value is
+ * set and a bubbling "input" event dispatched, which the code editor takes
+ * as one undoable change. The button is rendered by the spec field's
+ * CodeEditor widget (widgets.py) above the textarea; the editor inserts
+ * itself after the textarea, so the two don't overlap.
+ *
+ * Needs data-format.js (loaded with the code editor) for pasted data.
  */
 (() => {
   "use strict";
@@ -141,7 +147,7 @@
 
   /** The spec field's chart: its datasets field (if any) and textarea. */
   function chartContext(launcher) {
-    const textarea = launcher.closest(".wagtail-vega-spec")?.querySelector("textarea");
+    const textarea = launcher.textarea;
     const specWrapper = launcher.closest(BOUNDARY);
     const struct = specWrapper?.parentElement;
     const boundary = struct?.closest(BOUNDARY);
@@ -184,8 +190,9 @@
   }
 
   async function loadRows(dataset, config) {
-    const parseRows = window.wagtailVegaAdmin?._internal?.parseRows;
-    if (!parseRows) throw new Error("The dataset editor's scripts aren't loaded.");
+    // data-format.js comes with the code editor (widgets.EDITOR_JS)
+    const parseRows = window.wagtailVegaAdmin?.dataFormat?.parseRows;
+    if (!parseRows) throw new Error("The data editor's scripts aren't loaded.");
     if (dataset.source === "document") {
       if (!dataset.document) throw new Error(`Choose a document for “${dataset.name}” first.`);
       const url = `${config.rowsUrl}?id=${encodeURIComponent(dataset.document)}`;
@@ -207,22 +214,38 @@
     return parseRows(dataset.paste);
   }
 
-  function csrfToken() {
-    return (
-      window.wagtailConfig?.CSRF_TOKEN ||
+  function csrfHeaders() {
+    const config = window.wagtailConfig || {};
+    const token =
+      config.CSRF_TOKEN ||
       document.querySelector('input[name="csrfmiddlewaretoken"]')?.value ||
-      ""
+      document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/)?.[1];
+    return token ? { [config.CSRF_HEADER_NAME || "X-CSRFToken"]: token } : {};
+  }
+
+  /** Problems as messages, e.g. "encoding.x.type: ...", like a failed save. */
+  function problemMessages(errors) {
+    return errors.map(({ path, message }) =>
+      path && path.length ? `${path.join(".")}: ${message}` : message,
     );
   }
 
+  /** Check a spec with the validation endpoint the code editor uses (the
+   * same checks as saving). Returns error messages, empty if it's valid. */
   async function checkSpec(spec, config) {
     const response = await fetch(config.validateUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
-      body: JSON.stringify({ spec }),
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+        ...csrfHeaders(),
+      },
+      body: JSON.stringify(spec),
     });
     if (!response.ok) throw new Error(`Couldn't check the spec (${response.status}).`);
-    return (await response.json()).errors;
+    const { errors } = await response.json();
+    return Array.isArray(errors) ? problemMessages(errors) : [];
   }
 
   // -- The lightbox -----------------------------------------------------------
@@ -479,7 +502,24 @@
   // -- The button on each spec field -----------------------------------------
 
   class VoyagerLauncher extends HTMLElement {
+    /** The spec textarea this button belongs to: a sibling, named by data-for. */
+    get textarea() {
+      const name = this.dataset.for;
+      if (!name || !this.parentElement) return null;
+      return this.parentElement.querySelector(`:scope > textarea[name="${CSS.escape(name)}"]`);
+    }
+
     connectedCallback() {
+      // The widget renders the textarea first (Wagtail gives a widget's first
+      // element the field's aria-describedby and required, which the code
+      // editor copies), then this. Move above the textarea, and so above the
+      // code editor, which inserts itself right after the textarea. Moving
+      // reconnects the element, so this runs again; the check below stops it.
+      const textarea = this.textarea;
+      if (textarea && textarea.compareDocumentPosition(this) & Node.DOCUMENT_POSITION_FOLLOWING) {
+        textarea.before(this);
+        return;
+      }
       if (this.button) return;
       this.button = this.querySelector("[data-voyager-open]");
       this.noteEl = this.querySelector("[data-voyager-note]");
@@ -540,6 +580,6 @@
 
   // Internal helpers, exposed for tests. Not a public API.
   window.wagtailVegaVoyager = {
-    _internal: { toVoyagerSpec, fromVoyagerSpec, urlAllowed, formatFromUrl, deepMerge },
+    _internal: { toVoyagerSpec, fromVoyagerSpec, urlAllowed, formatFromUrl, deepMerge, problemMessages },
   };
 })();

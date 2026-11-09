@@ -13,6 +13,8 @@ from wagtail.models import Collection
 
 from tests.testapp.models import ChartPage
 
+from .editor import fill_editor
+
 pytestmark = pytest.mark.e2e
 
 VL = "https://vega.github.io/schema/vega-lite/v6.json"
@@ -29,8 +31,19 @@ def editor(admin_page, live_server, chart_page):
     return admin_page
 
 
+def spec_field(page, index=0):
+    return page.locator('[data-contentpath="spec"]').nth(index)
+
+
 def spec_textarea(page, index=0):
-    return page.locator('[data-contentpath="spec"]').nth(index).locator("textarea")
+    # Hidden behind the code editor, but still the field's value
+    return spec_field(page, index).locator("textarea")
+
+
+def editor_text(page, index=0):
+    return spec_textarea(page, index).evaluate(
+        "(t) => t.wagtailVegaEditor.view.state.doc.toString()"
+    )
 
 
 def open_voyager(page, index=0):
@@ -89,7 +102,8 @@ def test_opens_lightbox_with_the_dataset(editor, console_errors):
 
 def test_build_chart_and_use_it(editor, chart_page):
     textarea = spec_textarea(editor)
-    textarea.fill("")
+    fill_editor(spec_field(editor), "")
+    expect(textarea).to_have_value("")
     count_input_events(editor)
     dialog, frame = open_voyager(editor)
     wait_for_fields(frame, "quarter", "requests")
@@ -112,6 +126,8 @@ def test_build_chart_and_use_it(editor, chart_page):
     fields = {d.get("field") for d in spec["encoding"].values()}
     assert {"quarter", "requests"} <= fields
     assert "values" not in json.dumps(spec)
+    # The code editor picked it up (the textarea + "input" contract)
+    assert editor_text(editor) == textarea.input_value()
     # Written through the textarea, with one bubbling input event
     assert editor.evaluate("window.__inputEvents") == 1
     # Focus is back on the button that opened the lightbox
@@ -162,6 +178,12 @@ def test_confirms_before_replacing_a_spec(editor):
     assert spec["title"] == "Requests by quarter"
     assert spec["width"] == "container"
     assert editor.evaluate("window.__inputEvents") == 1
+    assert editor_text(editor) == textarea.input_value()
+
+    # ...and one Ctrl/Cmd+Z in the code editor brings the old spec back
+    spec_field(editor).locator(".cm-content").click()
+    editor.keyboard.press("ControlOrMeta+z")
+    expect(textarea).to_have_value(original)
 
 
 def test_cancel_and_escape_leave_the_field_unchanged(editor):
@@ -268,7 +290,7 @@ def test_several_datasets_offer_a_picker(editor):
     data_list.locator("button[data-streamfield-list-add]").last.click()
     new = data_list.locator(".wagtail-vega-dataset").last
     new.locator('[data-contentpath="name"] input').fill("budget")
-    new.locator('[data-contentpath="paste"] textarea').fill("year,amount\n2025,100\n2026,120")
+    fill_editor(new.locator('[data-contentpath="paste"]'), "year,amount\n2025,100\n2026,120")
 
     dialog, frame = open_voyager(editor)
     picker = dialog.get_by_label("Dataset")
@@ -303,9 +325,35 @@ def test_new_chart_blocks_get_the_button(editor):
     expect(editor.locator(DIALOG)).to_have_count(0)
 
     dataset = editor.locator('[data-contentpath="data"]').last.locator(".wagtail-vega-dataset")
-    dataset.locator('[data-contentpath="paste"] textarea').fill("fruit,count\napple,3\npear,5")
+    fill_editor(dataset.locator('[data-contentpath="paste"]'), "fruit,count\napple,3\npear,5")
     dialog, frame = open_voyager(editor, 4)
     expect(note).to_be_hidden()
     wait_for_fields(frame, "fruit", "count")
     dialog.get_by_role("button", name="Cancel").click()
     expect(new.locator("button")).to_be_focused()
+
+
+def test_button_sits_above_the_code_editor(editor):
+    """The button is part of the spec field's code editor widget: above the
+    editor, without hiding it or taking its place."""
+    for index in range(4):
+        field = spec_field(editor, index)
+        toolbar = field.locator(LAUNCHER)
+        code = field.locator(".wagtail-vega-code--spec")
+        expect(code).to_be_visible()
+        expect(field.locator("textarea")).to_be_hidden()
+        assert field.locator(".cm-editor").count() == 1
+        top = toolbar.bounding_box()
+        box = code.bounding_box()
+        assert top["y"] + top["height"] <= box["y"] + 1
+    # Typing in the editor still works with the button there
+    fill_editor(spec_field(editor), '{"a": 1}')
+    expect(spec_textarea(editor)).to_have_value('{"a": 1}')
+
+
+def test_new_blocks_get_both_editor_and_button(editor):
+    editor.locator("button.c-sf-add-button").last.click()
+    editor.get_by_role("option", name=re.compile(r"^Chart$")).click()
+    field = spec_field(editor, 4)
+    expect(field.locator(LAUNCHER)).to_be_visible()
+    expect(field.locator(".wagtail-vega-code--spec")).to_be_visible()

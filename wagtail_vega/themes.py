@@ -46,6 +46,15 @@ VAR_RE = re.compile(r"var\(\s*(--[\w-]+)\s*(?:,\s*([^)]*?)\s*)?\)")
 
 @dataclass(frozen=True)
 class Theme:
+    """A registered chart theme, built from a ``THEMES`` entry by
+    :func:`build_theme`.
+
+    ``config`` is merged under the spec's own ``config``, and ``dark`` is
+    merged over ``config`` when the page's colour scheme is dark.
+    ``fallbacks`` maps CSS custom property names (``"--brand"``) to values
+    used when the page doesn't define them, and for server-side rendering.
+    """
+
     name: str
     label: str
     config: dict[str, Any] = field(default_factory=dict)
@@ -56,6 +65,12 @@ class Theme:
 
 
 def build_theme(name: str, definition: Any) -> Theme:
+    """Build a :class:`Theme` from a ``THEMES`` entry: a definition dict, a
+    plain config dict, a dotted import path, ``"vega:<name>"`` for a theme
+    bundled with vega-embed, or a ``Theme``.
+
+    Raises ``ImproperlyConfigured`` for definitions it can't use.
+    """
     if isinstance(definition, Theme):
         return definition
     if isinstance(definition, str):
@@ -91,6 +106,7 @@ def build_theme(name: str, definition: Any) -> Theme:
 
 
 def get_themes() -> dict[str, Theme]:
+    """All themes in the ``THEMES`` setting, keyed by name."""
     return {
         name: build_theme(name, definition) for name, definition in get_setting("THEMES").items()
     }
@@ -118,10 +134,21 @@ def theme_choices() -> list[tuple[str, str]]:
     return [("", blank), *((name, theme.label) for name, theme in themes.items())]
 
 
+# Keys whose contents are data, which var() resolution leaves alone. The
+# browser applies the same rule (see wagtail-vega.js).
+DATA_KEYS = frozenset({"data", "datasets", "values"})
+
+
 def resolve_css_vars(value: Any, fallbacks: dict[str, str]) -> Any:
-    """Replace ``var(--x)`` strings using ``fallbacks`` (used for SSR)."""
+    """Replace ``var(--x)`` strings using ``fallbacks`` (used for SSR).
+
+    Strings are resolved anywhere in the spec except inside data (``data``,
+    ``datasets`` and ``values``), matching what the browser does.
+    """
     if isinstance(value, dict):
-        return {k: resolve_css_vars(v, fallbacks) for k, v in value.items()}
+        return {
+            k: v if k in DATA_KEYS else resolve_css_vars(v, fallbacks) for k, v in value.items()
+        }
     if isinstance(value, list):
         return [resolve_css_vars(v, fallbacks) for v in value]
     if isinstance(value, str) and "var(" in value:

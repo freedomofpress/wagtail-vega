@@ -1,10 +1,4 @@
-"""Admin views behind the "Build chart with Voyager" button.
-
-They are registered with ``register_admin_urls``, so Wagtail only lets in
-users who can access the admin.
-"""
-
-from __future__ import annotations
+"""Admin views."""
 
 import json
 
@@ -15,12 +9,36 @@ from django.template.response import TemplateResponse
 from django.utils.translation import gettext as _
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.http import require_GET, require_POST
+from wagtail.admin.auth import require_admin_access
 from wagtail.documents import get_document_model
 
 from .data import DOCUMENT_SUFFIXES
 from .data import document_rows as parse_document
 from .encoders import VegaJSONEncoder
-from .validation import spec_errors
+from .validation import spec_problems
+
+
+@require_admin_access
+@require_POST
+def validate_spec(request):
+    """Live validation for the admin's spec editor.
+
+    POST a spec as JSON (with the CSRF token header); the response is
+    ``{"errors": [{"path": ["encoding", "x", "type"], "message": "..."}]}``,
+    the same problems that saving the spec would report. Admin users only
+    (``require_admin_access``, which ``register_admin_urls`` also applies).
+    """
+    try:
+        spec = json.loads(request.body)
+    except ValueError:
+        return JsonResponse(
+            {"errors": [{"path": [], "message": _("Enter a valid JSON.")}]}, status=400
+        )
+    errors = [{"path": list(p.path), "message": p.message} for p in spec_problems(spec)]
+    return JsonResponse({"errors": errors})
+
+
+# -- Vega Voyager (the "Build chart with Voyager" button) --------------------
 
 # The Voyager page runs old third-party code (React 15, vega 4). Sandboxing
 # it without allow-same-origin gives it an opaque origin: it can't read the
@@ -42,17 +60,20 @@ def document_permissions():
         return permission_policy
 
 
+@require_admin_access
 @require_GET
 @xframe_options_sameorigin
 def voyager(request):
+    """The page Voyager runs in, inside the admin's lightbox iframe."""
     response = TemplateResponse(request, "wagtail_vega/admin/voyager.html")
     response["Content-Security-Policy"] = FRAME_CSP
     return response
 
 
+@require_admin_access
 @require_GET
 def document_rows(request):
-    """The parsed rows of a data document, as charts will see them."""
+    """The parsed rows of a data document (``?id=``), as charts will see them."""
     try:
         pk = int(request.GET.get("id", ""))
     except ValueError:
@@ -71,13 +92,3 @@ def document_rows(request):
         message = e.messages[0] if isinstance(e, ValidationError) else str(e)
         return JsonResponse({"error": _("Couldn't read this data: %s") % message}, status=400)
     return JsonResponse({"rows": rows}, encoder=VegaJSONEncoder)
-
-
-@require_POST
-def validate_spec(request):
-    """Check a spec the way saving the page would. Expects ``{"spec": ...}``."""
-    try:
-        spec = json.loads(request.body)["spec"]
-    except (ValueError, KeyError, TypeError):
-        return HttpResponseBadRequest("Expected a JSON body with a spec")
-    return JsonResponse({"errors": [str(e) for e in spec_errors(spec)]})

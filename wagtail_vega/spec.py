@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Iterator, Mapping
+from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -15,7 +16,7 @@ Dataset = list | dict
 
 
 class SpecError(ValueError):
-    pass
+    """The spec has no ``$schema``, or one that isn't Vega or Vega-Lite."""
 
 
 def spec_kind(spec: Mapping[str, Any]) -> str:
@@ -59,7 +60,21 @@ def _walk(node: Any) -> Iterator[tuple[str | None, Any, Any]]:
             stack.extend((None, v, value) for v in value)
 
 
+FORMAT_EXTENSIONS = {".csv": "csv", ".tsv": "tsv", ".json": "json"}
+
+
 def remote_data(url: str, fmt: str | None = None) -> dict[str, Any]:
+    """A remote dataset: ``{"url": url, "format": {"type": fmt}}``. Return
+    these from ``BaseChartBlock.get_datasets()`` to have the browser load the
+    data.
+
+    If ``fmt`` isn't given, it's inferred from the URL's extension (``.csv``,
+    ``.tsv``, ``.json``). Vega, unlike Vega-Lite, would otherwise read every
+    URL as JSON. With no known extension, the format is left unset.
+    """
+    if not fmt:
+        suffix = PurePosixPath(urlsplit(url).path).suffix.lower()
+        fmt = FORMAT_EXTENSIONS.get(suffix)
     ref: dict[str, Any] = {"url": url}
     if fmt:
         ref["format"] = {"type": fmt}
@@ -67,6 +82,8 @@ def remote_data(url: str, fmt: str | None = None) -> dict[str, Any]:
 
 
 def is_remote(dataset: Dataset) -> bool:
+    """Whether a dataset is a remote reference (a dict with a ``url``)
+    rather than inline rows."""
     return isinstance(dataset, dict) and "url" in dataset
 
 
@@ -114,16 +131,33 @@ def inject_datasets(spec: Mapping[str, Any], datasets: Mapping[str, Dataset]) ->
     return spec
 
 
+JSONPath = tuple[str | int, ...]
+
+
+def iter_url_paths(spec: Any, path: JSONPath = ()) -> Iterator[tuple[JSONPath, str]]:
+    """Yield ``(path, url)`` for every literal ``url`` string in the spec (data
+    sources, images), in document order. ``path`` is the keys and indices
+    leading to the URL, e.g. ``("data", "url")``."""
+    if isinstance(spec, dict):
+        for key, value in spec.items():
+            if key == "url" and isinstance(value, str):
+                yield (*path, key), value
+            else:
+                yield from iter_url_paths(value, (*path, key))
+    elif isinstance(spec, list):
+        for i, value in enumerate(spec):
+            yield from iter_url_paths(value, (*path, i))
+
+
 def iter_urls(spec: Any) -> Iterator[str]:
     """Yield every literal ``url`` string in the spec (data sources, images)."""
-    for key, value, _parent in _walk(spec):
-        if key == "url" and isinstance(value, str):
-            yield value
+    for _path, url in iter_url_paths(spec):
+        yield url
 
 
 def host_allowed(url: str, allowed_hosts: list[str]) -> bool:
     """Relative URLs are same-origin and always allowed; absolute URLs must be
-    http(s) and on the allowlist ("*.example.com" also matches subdomains)."""
+    http(s) and on the allowlist (``"*.example.com"`` also matches subdomains)."""
     parts = urlsplit(url)
     if not parts.scheme and not parts.netloc:
         return True
@@ -140,4 +174,10 @@ def host_allowed(url: str, allowed_hosts: list[str]) -> bool:
 
 
 def disallowed_urls(spec: Any, allowed_hosts: list[str]) -> list[str]:
-    return [u for u in iter_urls(spec) if not host_allowed(u, allowed_hosts)]
+    """The literal URLs in ``spec`` that :func:`host_allowed` rejects."""
+    return [url for _path, url in disallowed_url_paths(spec, allowed_hosts)]
+
+
+def disallowed_url_paths(spec: Any, allowed_hosts: list[str]) -> list[tuple[JSONPath, str]]:
+    """Like :func:`disallowed_urls`, with the path to each URL."""
+    return [(p, u) for p, u in iter_url_paths(spec) if not host_allowed(u, allowed_hosts)]

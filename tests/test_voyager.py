@@ -1,4 +1,7 @@
-"""The admin endpoints and widget behind "Build chart with Voyager"."""
+"""The admin endpoints and widget behind "Build chart with Voyager".
+
+The spec validation endpoint it also uses is tested in test_editor.py.
+"""
 
 import json
 from pathlib import Path
@@ -6,13 +9,13 @@ from pathlib import Path
 import pytest
 from django.contrib.auth.models import Group, Permission
 from django.core.files.base import ContentFile
-from django.test import Client
 from django.urls import reverse
 from wagtail.documents import get_document_model
 
 from wagtail_vega.blocks import SpecBlock
-from wagtail_vega.validation import spec_errors
+from wagtail_vega.validation import spec_problems
 from wagtail_vega.views import FRAME_CSP
+from wagtail_vega.widgets import CodeEditor
 
 from .conftest import VL
 
@@ -20,9 +23,9 @@ pytestmark = pytest.mark.django_db
 
 Document = get_document_model()
 
-FRAME = reverse("wagtail_vega:voyager")
-ROWS = reverse("wagtail_vega:document_rows")
-VALIDATE = reverse("wagtail_vega:validate_spec")
+FRAME = reverse("wagtail_vega_voyager")
+ROWS = reverse("wagtail_vega_document_rows")
+VALIDATE = reverse("wagtail_vega_validate_spec")
 
 
 @pytest.fixture(autouse=True)
@@ -64,23 +67,17 @@ def editor_client(client, django_user_model):
     return client
 
 
-def post_spec(client, spec, **extra):
-    return client.post(
-        VALIDATE, json.dumps({"spec": spec}), content_type="application/json", **extra
-    )
-
-
 # -- Access ------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("url", [FRAME, ROWS, VALIDATE])
+@pytest.mark.parametrize("url", [FRAME, ROWS])
 def test_anonymous_users_are_sent_to_login(client, url):
     response = client.get(url)
     assert response.status_code == 302
     assert reverse("wagtailadmin_login") in response["Location"]
 
 
-@pytest.mark.parametrize("url", [FRAME, ROWS, VALIDATE])
+@pytest.mark.parametrize("url", [FRAME, ROWS])
 def test_users_without_admin_access_are_refused(no_admin_client, url):
     response = no_admin_client.get(url)
     assert response.status_code in (302, 403)
@@ -181,62 +178,6 @@ def test_document_rows_is_get_only(admin_client, doc):
     assert admin_client.post(ROWS, {"id": doc.pk}).status_code == 405
 
 
-# -- Spec validation ---------------------------------------------------------------
-
-
-def test_validate_spec(admin_client, vl_bar):
-    response = post_spec(admin_client, vl_bar)
-    assert response.status_code == 200
-    assert response.json() == {"errors": []}
-
-
-@pytest.mark.parametrize(
-    "spec,message",
-    [
-        ({"mark": "bar"}, '"$schema"'),
-        ([], "must be a JSON object"),
-        ({"$schema": VL, "mark": "nope"}, "nope"),
-        ({"$schema": VL, "data": {"url": "https://evil.example/x.csv"}, "mark": "bar"}, "evil"),
-    ],
-)
-def test_validate_spec_errors(admin_client, vega_settings, spec, message):
-    errors = post_spec(admin_client, spec).json()["errors"]
-    assert errors and message in " ".join(errors)
-
-
-def test_validate_spec_matches_spec_block(admin_client, vega_settings):
-    """The endpoint runs the same checks as saving the page."""
-    from django.core.exceptions import ValidationError
-
-    spec = {"$schema": VL, "data": {"url": "https://evil.example/x.csv"}, "mark": "bar"}
-    with pytest.raises(ValidationError) as e:
-        SpecBlock().clean(spec)
-    assert post_spec(admin_client, spec).json()["errors"] == e.value.messages
-
-
-@pytest.mark.parametrize("body", ["not json", "[]", '{"no": "spec"}'])
-def test_validate_spec_bad_request(admin_client, body):
-    response = admin_client.post(VALIDATE, body, content_type="application/json")
-    assert response.status_code == 400
-
-
-def test_validate_spec_is_post_only(admin_client):
-    assert admin_client.get(VALIDATE).status_code == 405
-
-
-def test_validate_spec_needs_csrf_token(admin_user, vl_bar):
-    client = Client(enforce_csrf_checks=True)
-    client.force_login(admin_user)
-    assert post_spec(client, vl_bar).status_code == 403
-
-    # With the token (as the admin's JS sends it)
-    client.get(reverse("wagtailadmin_home"))
-    token = client.cookies["csrftoken"].value
-    response = post_spec(client, vl_bar, HTTP_X_CSRFTOKEN=token)
-    assert response.status_code == 200
-    assert response.json() == {"errors": []}
-
-
 # -- The widget ----------------------------------------------------------------------
 
 
@@ -256,32 +197,43 @@ def test_spec_widget_has_voyager_button(vega_settings):
     assert "Build chart with Voyager" in html
 
 
+def test_spec_widget_is_the_code_editor():
+    """The button comes with the spec field's code editor. The textarea is the
+    widget's first element, because Wagtail gives that element the field's
+    aria-describedby and required, which the code editor copies; the button
+    moves itself above it in the browser."""
+    widget = SpecBlock().field.widget
+    assert isinstance(widget, CodeEditor) and widget.mode == "spec" and widget.voyager
+    html = render_spec_field(SpecBlock()).strip()
+    assert html.startswith("<textarea")
+    assert "data-wagtail-vega-code-editor=" in html
+    assert html.index("</textarea>") < html.index("<wagtail-vega-voyager")
+    assert 'data-for="spec"' in html
+
+
 def test_spec_widget_without_voyager():
+    widget = SpecBlock(voyager=False).field.widget
+    assert isinstance(widget, CodeEditor) and not widget.voyager
     html = render_spec_field(SpecBlock(voyager=False))
     assert "wagtail-vega-voyager" not in html
-    assert "<textarea" in html
+    assert "data-wagtail-vega-code-editor=" in html
+    assert "voyager-launcher" not in str(widget.media)
+
+
+def test_voyager_needs_spec_mode():
+    assert not CodeEditor(mode="json", voyager=True).voyager
+    assert "wagtail-vega-voyager" not in CodeEditor(mode="json", voyager=True).render("x", "{}")
 
 
 def test_spec_widget_media():
     media = str(SpecBlock().field.widget.media)
     assert "wagtail_vega/admin/voyager-launcher.js" in media
     assert "wagtail_vega/admin/voyager-launcher.css" in media
+    # The launcher reads pasted data with data-format.js, part of the editor
+    assert "wagtail_vega/admin/data-format.js" in media
+    assert media.index("data-format.js") < media.index("voyager-launcher.js")
     # Voyager's own assets load only inside its iframe
     assert "vendor/voyager" not in media
-
-
-def test_spec_widget_without_admin_urls(settings):
-    """Rendering outside a project with the admin URLs leaves the button out."""
-    settings.ROOT_URLCONF = "tests.urls_no_admin"
-    from django.urls import clear_url_caches
-
-    clear_url_caches()
-    try:
-        html = render_spec_field(SpecBlock())
-    finally:
-        clear_url_caches()
-    assert "wagtail-vega-voyager" not in html
-    assert "<textarea" in html
 
 
 def test_edit_page_includes_launcher(admin_client):
@@ -310,4 +262,4 @@ def test_converted_specs_are_valid_v6(fixture, vega_settings):
     spec = fixture["expected"]
     assert spec["$schema"] == VL
     assert spec["data"] == {"name": fixture["dataset"]}
-    assert spec_errors(spec) == []
+    assert spec_problems(spec) == []

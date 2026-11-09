@@ -1,4 +1,4 @@
-from django.urls import include, path
+from django.urls import path
 from wagtail import hooks
 
 from . import views
@@ -11,9 +11,16 @@ def register_icons(icons):
 
 @hooks.register("register_admin_urls")
 def register_admin_urls():
-    urls = [
-        path("voyager/", views.voyager, name="voyager"),
-        path("document-rows/", views.document_rows, name="document_rows"),
-        path("validate-spec/", views.validate_spec, name="validate_spec"),
+    return [
+        path(
+            "wagtail-vega/validate-spec/",
+            views.validate_spec,
+            name="wagtail_vega_validate_spec",
+        ),
+        path("wagtail-vega/voyager/", views.voyager, name="wagtail_vega_voyager"),
+        path(
+            "wagtail-vega/document-rows/",
+            views.document_rows,
+            name="wagtail_vega_document_rows",
+        ),
     ]
-    return [path("wagtail-vega/", include((urls, "wagtail_vega"), namespace="wagtail_vega"))]

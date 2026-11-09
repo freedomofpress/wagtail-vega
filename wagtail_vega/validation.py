@@ -1,8 +1,10 @@
-"""Validate specs against the vendored Vega / Vega-Lite JSON schemas."""
+"""Validate specs against the vendored Vega / Vega-Lite JSON schemas and the
+data host allowlist."""
 
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -12,7 +14,7 @@ from jsonschema import Draft7Validator
 from jsonschema.exceptions import ValidationError, best_match
 
 from .conf import get_setting
-from .spec import VEGA, VEGA_LITE, SpecError, disallowed_urls, spec_kind
+from .spec import VEGA, VEGA_LITE, JSONPath, SpecError, disallowed_url_paths, spec_kind
 
 SCHEMA_DIR = Path(__file__).parent / "schemas"
 MAX_ERRORS = 5
@@ -25,16 +27,30 @@ def get_validator(kind: str) -> Draft7Validator:
     return Draft7Validator(schema)
 
 
-def _format(error: ValidationError) -> str:
-    path = ".".join(str(p) for p in error.absolute_path)
+@dataclass(frozen=True)
+class SpecProblem:
+    """A problem with a spec, at ``path`` (keys and indices; empty for the
+    whole spec)."""
+
+    path: JSONPath
+    message: str
+
+    def __str__(self) -> str:
+        """``encoding.x.type: message``. The admin's code editor parses the
+        leading dotted path to highlight the problem in place."""
+        dotted = ".".join(str(p) for p in self.path)
+        return f"{dotted}: {self.message}" if dotted else self.message
+
+
+def _problem(error: ValidationError) -> SpecProblem:
     message = error.message
     if len(message) > 300:
         message = message[:300] + "…"
-    return f"{path}: {message}" if path else message
+    return SpecProblem(tuple(error.absolute_path), message)
 
 
-def validate_spec(spec: dict[str, Any]) -> list[str]:
-    """Return a list of human-readable schema errors (empty if valid).
+def schema_problems(spec: dict[str, Any]) -> list[SpecProblem]:
+    """Problems found by validating against the JSON schema (empty if valid).
 
     Raises ``SpecError`` if the ``$schema`` is missing or unrecognised.
     """
@@ -44,27 +60,40 @@ def validate_spec(spec: dict[str, Any]) -> list[str]:
         return []
     # Top-level specs are a large anyOf; best_match descends into the most
     # relevant branch, which gives far more useful messages than the root.
-    messages = [_format(best_match(errors))]
+    problems = [_problem(best_match(errors))]
     for error in errors:
-        if len(messages) >= MAX_ERRORS:
+        if len(problems) >= MAX_ERRORS:
             break
-        msg = _format(error)
-        if msg not in messages and not error.context:
-            messages.append(msg)
-    return messages
+        problem = _problem(error)
+        if problem not in problems and not error.context:
+            problems.append(problem)
+    return problems
 
 
-def spec_errors(spec: Any) -> list[str]:
-    """Everything ``SpecBlock`` checks on save: the spec is an object with a
-    known ``$schema``, valid against the schema (if VALIDATE_SCHEMA is on),
-    and only loads data from allowed hosts."""
+def validate_spec(spec: dict[str, Any]) -> list[str]:
+    """Return a list of human-readable schema errors (empty if valid).
+
+    Raises ``SpecError`` if the ``$schema`` is missing or unrecognised.
+    """
+    return [str(p) for p in schema_problems(spec)]
+
+
+def spec_problems(spec: Any) -> list[SpecProblem]:
+    """Everything ``SpecBlock`` checks when a page is saved: the spec is an
+    object with a known ``$schema``, matches the JSON schema (if the
+    VALIDATE_SCHEMA setting is on), and only loads data from allowed hosts.
+
+    Used both on save and by the admin's live validation endpoint, so the
+    editor shows exactly the errors that saving would.
+    """
     if not isinstance(spec, dict):
-        return [_("The spec must be a JSON object.")]
+        return [SpecProblem((), _("The spec must be a JSON object."))]
     try:
-        spec_kind(spec)
-        errors = validate_spec(spec) if get_setting("VALIDATE_SCHEMA") else []
+        problems = schema_problems(spec) if get_setting("VALIDATE_SCHEMA") else []
+        if not problems:
+            spec_kind(spec)
     except SpecError as e:
-        return [str(e)]
-    blocked = disallowed_urls(spec, get_setting("ALLOWED_DATA_HOSTS"))
-    errors += [_("Loading data from %s is not allowed.") % url for url in blocked]
-    return errors
+        return [SpecProblem(("$schema",) if "$schema" in spec else (), str(e))]
+    for path, url in disallowed_url_paths(spec, get_setting("ALLOWED_DATA_HOSTS")):
+        problems.append(SpecProblem(path, _("Loading data from %s is not allowed.") % url))
+    return problems
