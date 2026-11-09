@@ -1,4 +1,8 @@
-"""The admin's code editors (CodeMirror) for specs and pasted data."""
+"""The admin's code editors (CodeMirror) for specs and pasted data.
+
+TODO-23: spec fields now hide their editor until "Edit chart" opens the
+dialog, so the spec tests here still drive an inline editor and need
+updating (see the draft PR for #23)."""
 
 import json
 import re

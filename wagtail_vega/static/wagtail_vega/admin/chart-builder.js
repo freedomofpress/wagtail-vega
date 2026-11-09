@@ -236,6 +236,7 @@
   /** Load vega, vega-lite, vega-embed, vega-interpreter and wagtail-vega.js
    * (for var() resolution) once, in order. */
   function loadLibraries(config) {
+    // TODO-23: vegaInterpreter. main (#25) drops vega-interpreter.js: stop waiting for it
     if (window.vegaEmbed && window.vegaInterpreter && window.wagtailVega?._internal) {
       return Promise.resolve();
     }
@@ -346,6 +347,7 @@
       defaultStyle: false,
       tooltip: { disableDefaultStyle: true },
       ast: true,
+      // TODO-23: vegaInterpreter. main (#25) drops this: keep ast: true, remove expr
       expr: window.vegaInterpreter.expressionInterpreter,
       logger,
       loader: internal.makeLoader ? internal.makeLoader(config.allowedHosts) : undefined,

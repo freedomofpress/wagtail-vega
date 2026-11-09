@@ -1,5 +1,7 @@
 """Chart blocks in the admin: labels, empty states, and the check that the
-spec only loads datasets the chart has (chart-block.js)."""
+spec only loads datasets the chart has (chart-block.js).
+
+TODO-23: check the spec-editor steps against the combined editor."""
 
 import pytest
 from django.urls import reverse
