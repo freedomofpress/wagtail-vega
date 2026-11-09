@@ -148,7 +148,10 @@
     if (Array.isArray(node)) return node.map(useCspSafeFormats);
     if (!node || typeof node !== "object") return node;
     const out = {};
-    for (const [k, v] of Object.entries(node)) out[k] = useCspSafeFormats(v);
+    for (const [k, v] of Object.entries(node)) {
+      // Inline rows are data: a "url" column in them isn't a data source
+      out[k] = k === "values" || k === "datasets" ? v : useCspSafeFormats(v);
+    }
     const type = out.format?.type ?? (typeof out.url === "string" ? urlExtension(out.url) : null);
     if ((out.format || typeof out.url === "string") && CSP_FORMATS[type]) {
       out.format = { ...out.format, type: CSP_FORMATS[type] };
@@ -214,8 +217,9 @@
       if (p.cspSafe) {
         installCspSafeFormats();
         spec = useCspSafeFormats(spec);
+        // vega-embed then evaluates expressions with the vega-interpreter it
+        // bundles, which doesn't use eval
         options.ast = true;
-        options.expr = window.vegaInterpreter.expressionInterpreter;
       }
 
       const target = document.createElement("div");

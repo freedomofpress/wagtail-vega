@@ -18,7 +18,7 @@
  *   bubbling "input" event dispatched, which the code editor takes as one
  *   undoable change.
  * - The Vega libraries are loaded the first time a builder opens, not with
- *   the edit page. The preview uses vega-interpreter, so it needs no
+ *   the edit page. The preview uses vega-embed's bundled vega-interpreter, so it needs no
  *   'unsafe-eval' in the admin's Content Security Policy.
  *
  * The button is rendered by the spec field's CodeEditor widget (widgets.py),
@@ -213,10 +213,10 @@
 
   let libraries = null;
 
-  /** Load vega, vega-lite, vega-embed, vega-interpreter and wagtail-vega.js
-   * (for var() resolution) once, in order. */
+  /** Load vega, vega-lite, vega-embed and wagtail-vega.js (for var()
+   * resolution) once, in order. */
   function loadLibraries(config) {
-    if (window.vegaEmbed && window.vegaInterpreter && window.wagtailVega?._internal) {
+    if (window.vegaEmbed && window.wagtailVega?._internal) {
       return Promise.resolve();
     }
     if (!libraries) {
@@ -1019,8 +1019,8 @@
         renderer: "svg",
         defaultStyle: false,
         tooltip: { disableDefaultStyle: true },
+        // vega-embed's bundled vega-interpreter: no eval, so no 'unsafe-eval'
         ast: true,
-        expr: window.vegaInterpreter.expressionInterpreter,
         logger,
         loader: internal.makeLoader ? internal.makeLoader(this.config.allowedHosts) : undefined,
       };

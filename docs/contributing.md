@@ -92,7 +92,7 @@ Pull requests get a preview build on Read the Docs, configured in `.readthedocs.
 
 ## Updating the vendored libraries
 
-Vega, Vega-Lite, vega-embed, vega-interpreter and the Vega and Vega-Lite JSON schemas are vendored into the package. To update them, change the versions in `scripts/vendor.py` and run it:
+Vega, Vega-Lite, vega-embed and the Vega and Vega-Lite JSON schemas are vendored into the package. To update them, change the versions in `scripts/vendor.py` and run it:
 
 ```console
 $ python scripts/vendor.py

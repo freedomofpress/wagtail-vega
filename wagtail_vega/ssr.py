@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from functools import cache as cache_function
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -16,7 +17,7 @@ from django.core.cache import cache
 
 from .conf import get_allowed_hosts, get_setting
 from .encoders import VegaJSONEncoder
-from .spec import VEGA_LITE, host_allowed, iter_urls, normalize_url
+from .spec import VEGA_LITE, deep_merge, host_allowed, iter_urls, normalize_url
 
 logger = logging.getLogger(__name__)
 
@@ -44,12 +45,29 @@ def allowed_base_urls(spec: Any) -> list[str]:
     return sorted(bases)
 
 
+@cache_function
+def _builtin_themes() -> dict:
+    return vl_convert.get_themes()
+
+
+def builtin_theme(name: str | None) -> dict | None:
+    """The config of a theme bundled with vega-embed and vl-convert (both use
+    vega-themes), e.g. ``"dark"``; ``None`` if unknown."""
+    if not name or vl_convert is None:
+        return None
+    theme = _builtin_themes().get(name)
+    if theme is None:
+        logger.warning("wagtail-vega: unknown built-in theme %r", name)
+    return theme
+
+
 def render_svg(spec: dict, kind: str, vega_theme: str | None = None) -> str | None:
     """Render a final spec to SVG, cached in Django's default cache for
     ``SSR_CACHE_TIMEOUT`` seconds.
 
     ``kind`` is ``"vega"`` or ``"vega-lite"``. ``vega_theme`` is the name of a
-    theme bundled with vega-embed, and only applies to Vega-Lite. Returns
+    theme bundled with vega-embed (e.g. ``"dark"``); it's applied under the
+    spec's own ``config``, as vega-embed does in the browser. Returns
     ``None`` if vl-convert isn't installed, the spec uses relative URLs, or
     rendering fails.
     """
@@ -74,9 +92,14 @@ def render_svg(spec: dict, kind: str, vega_theme: str | None = None) -> str | No
     # Round-trip through JSON so dates/Decimals become plain values, as in the browser
     plain = json.loads(payload)
     bases = allowed_base_urls(plain)
+    builtin = builtin_theme(vega_theme)
+    if builtin:
+        # vl-convert can only apply named themes to Vega-Lite, so merge the
+        # theme's config ourselves, for both spec kinds
+        plain["config"] = deep_merge(builtin, plain.get("config"))
     try:
         if kind == VEGA_LITE:
-            svg = vl_convert.vegalite_to_svg(plain, theme=vega_theme, allowed_base_urls=bases)
+            svg = vl_convert.vegalite_to_svg(plain, allowed_base_urls=bases)
         else:
             svg = vl_convert.vega_to_svg(plain, allowed_base_urls=bases)
     except Exception:

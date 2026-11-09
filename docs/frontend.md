@@ -6,7 +6,6 @@ Charts need a stylesheet and some scripts:
 
 - `wagtail_vega/wagtail-vega.css`;
 - the vendored `vega.min.js`, `vega-lite.min.js` and `vega-embed.min.js`;
-- `vega-interpreter.js`, in {ref}`CSP-safe mode <csp-safe>`;
 - `wagtail_vega/wagtail-vega.js`.
 
 The `{% wagtail_vega_assets %}` tag outputs them, as a `<link>` and `<script defer>` tags:

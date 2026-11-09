@@ -16,7 +16,8 @@ DEFAULTS: dict[str, Any] = {
     # Relative (same-origin) URLs and the site's own hostnames (see
     # get_allowed_hosts) are always allowed.
     "ALLOWED_DATA_HOSTS": [],
-    # Use vega-interpreter so charts work without 'unsafe-eval' in CSP
+    # Evaluate expressions with vega-interpreter (bundled in vega-embed) so
+    # charts work without 'unsafe-eval' in CSP
     "CSP_SAFE": False,
     # Render an SVG on the server (requires the "ssr" extra)
     "SSR": False,

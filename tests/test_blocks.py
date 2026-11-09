@@ -263,13 +263,12 @@ def test_render(vega_settings, vl_bar):
 
 
 def test_assets_tag_csp_safe(vega_settings):
+    """CSP-safe mode needs no extra script: vega-embed bundles vega-interpreter."""
     vega_settings["CSP_SAFE"] = True
     html = wagtail_vega_assets({"request": RequestFactory().get("/")})
-    assert "vega-interpreter.js" in html
+    assert "vega-interpreter" not in html
     assert (
-        html.index("vega.min.js")
-        < html.index("vega-interpreter.js")
-        < html.index("wagtail-vega.js")
+        html.index("vega.min.js") < html.index("vega-embed.min.js") < html.index("wagtail-vega.js")
     )
 
 

@@ -48,7 +48,8 @@ Specs that use relative URLs, such as `/media/data.csv`, aren't server-rendered.
 
 - Only the light config is used, since the server doesn't know the reader's colour scheme.
 - Charts with `"width": "container"` are rendered at a default width until JavaScript takes over.
-- Built-in (`vega:`) themes are only applied to Vega-Lite specs.
 - The SVG isn't interactive: no tooltips, selections or bound inputs until JavaScript runs.
 - Rendering a chart for the first time adds to the response time. Later requests use the cache.
 - Text is measured with the fonts available to vl-convert on the server, so labels can be placed slightly differently from the browser.
+
+Built-in (`vega:`) themes are applied on the server too, for Vega and Vega-Lite specs alike: their config comes from vl-convert, which uses the same [vega-themes](https://github.com/vega/vega-themes) as vega-embed. vl-convert may bundle slightly different Vega and Vega-Lite versions from the ones the browser gets, so small rendering differences are possible. wagtail-vega supports vl-convert 1.x.

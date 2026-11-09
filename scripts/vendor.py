@@ -29,8 +29,10 @@ PACKAGES = {
     "vega": "6.4.0",
     "vega-lite": "6.5.0",
     "vega-embed": "7.3.0",
-    "vega-interpreter": "2.3.2",
 }
+# vega-embed bundles vega-interpreter (the CSP-safe expression evaluator) and
+# uses it whenever charts are embedded with ast: true, so it isn't vendored
+# separately.
 
 # (package, path inside tarball, destination)
 FILES = [
@@ -65,33 +67,6 @@ def read(tar: tarfile.TarFile, member: str) -> bytes:
     return f.read()
 
 
-def wrap_interpreter(source: str) -> str:
-    """vega-interpreter only ships as an ES module importing vega-util.
-
-    vega-util is re-exported on the global ``vega`` object by the UMD build,
-    so rewrite the module into a classic script exposing
-    ``window.vegaInterpreter.expressionInterpreter``.
-    """
-    imports = re.findall(r"^import \{([^}]*)\} from 'vega-util';\n", source, re.M)
-    if len(imports) != 1:
-        sys.exit("Unexpected vega-interpreter imports; update wrap_interpreter()")
-    body = re.sub(r"^import .*;\n", "", source, flags=re.M)
-    export = re.search(r"^export \{ (\w+) as expressionInterpreter \};\n", body, re.M)
-    if not export:
-        sys.exit("Unexpected vega-interpreter exports; update wrap_interpreter()")
-    body = body.replace(export.group(0), "")
-    body = re.sub(r"^//# sourceMappingURL=.*\n?", "", body, flags=re.M)
-    return (
-        f"/* vega-interpreter@{PACKAGES['vega-interpreter']} (BSD-3-Clause), "
-        "wrapped by wagtail-vega */\n"
-        "(function (global) {\n"
-        f"const {{{imports[0]}}} = global.vega;\n"
-        f"{body}\n"
-        f"global.vegaInterpreter = {{ expressionInterpreter: {export.group(1)} }};\n"
-        "})(globalThis);\n"
-    )
-
-
 _tars: dict[tuple[str, str], tarfile.TarFile] = {}
 
 
@@ -120,11 +95,6 @@ def main() -> None:
             content = strip_source_maps(content.decode()).encode()
         dest.write_bytes(content)
         print(f"wrote {dest.relative_to(ROOT)}")
-
-    interp = read(tars["vega-interpreter"], "package/build/vega-interpreter.js")
-    dest = STATIC / "vega-interpreter.js"
-    dest.write_text(wrap_interpreter(interp.decode()))
-    print(f"wrote {dest.relative_to(ROOT)}")
 
     for name in PACKAGES:
         lic = read(tars[name], "package/LICENSE")
