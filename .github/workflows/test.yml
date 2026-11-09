@@ -63,11 +63,12 @@ jobs:
         with:
           node-version: 22
       - run: npm test
-      - name: Check the vendored CodeMirror bundle is reproducible
+      - name: Check the vendored JS and schemas match the pinned npm packages
         run: |
-          npm ci
+          npm ci --ignore-scripts
           npm run build
-          git diff --exit-code wagtail_vega/static/wagtail_vega/admin/vendor/
+          git diff --exit-code wagtail_vega/static/wagtail_vega/vendor/ \
+            wagtail_vega/static/wagtail_vega/admin/vendor/ wagtail_vega/schemas/
 
   lint:
     runs-on: ubuntu-latest
