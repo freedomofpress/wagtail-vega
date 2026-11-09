@@ -7,6 +7,7 @@ from wagtail_vega.spec import (
     disallowed_urls,
     host_allowed,
     inject_datasets,
+    iter_urls,
     normalize_url,
     remote_data,
     spec_kind,
@@ -177,3 +178,12 @@ def test_normalize_url_matches_browsers(url, normalized):
 def test_host_allowed_sees_through_browser_quirks(url):
     assert not host_allowed(url, ["ok.org"])
     assert host_allowed(url, ["evil.example"])
+
+
+def test_url_columns_in_inline_data_are_not_urls(vl_bar):
+    """Rows with a "url" column are data, not something the chart loads (#21)."""
+    vl_bar["data"] = {"values": [{"url": "https://news.example.net/a", "b": 1}]}
+    vl_bar["datasets"] = {"links": [{"url": "https://elsewhere.example/b"}]}
+    vl_bar["layer"] = [{"data": {"url": "https://evil.example/x.csv"}}]
+    assert list(iter_urls(vl_bar)) == ["https://evil.example/x.csv"]
+    assert disallowed_urls(vl_bar, []) == ["https://evil.example/x.csv"]
