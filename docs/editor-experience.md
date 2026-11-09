@@ -97,7 +97,7 @@ Data
 : Voyager gets the data from the form as it is now, whether or not the page has been saved. Pasted data is read exactly as it will be for the chart, documents are read on the server, and URL datasets are fetched by the browser, from allowed hosts only. If the chart has several datasets, a **Dataset** menu picks one. Datasets with no data yet are left out.
 
 Opening the current chart
-: If the field holds a single-view Vega-Lite chart, Voyager opens with its mark and fields. Anything else, such as a Vega spec, layers or concatenated views, starts from the data, and a note says so.
+: If the field holds a single-view Vega-Lite chart, Voyager opens with its mark and fields. Anything else, such as a Vega spec, layers or concatenated views, starts from the data, and a note says so. Voyager only understands Vega-Lite 2, so parts of the chart it doesn't know are dropped when it opens. For example, grouped bars (`xOffset`) open as stacked bars. If the editor then chooses **Use this chart**, those parts are gone from the spec; the confirmation step's **Keep editing** button, or undo in the code editor, gets them back.
 
 Using the chart
 : **Use this chart** turns Voyager's chart into a Vega-Lite v6 spec that loads the dataset by name (`"data": {"name": "source"}`, never a copy of the data), and checks it with the same checks as saving. If the field already has a spec, the lightbox asks before replacing it. The title, description, width, height and `config` of the spec it replaces are kept. The change goes into the code editor as one edit, so Ctrl+Z (Cmd+Z) undoes it.

@@ -14,7 +14,7 @@ from wagtail.documents import get_document_model
 
 from wagtail_vega.blocks import SpecBlock
 from wagtail_vega.validation import spec_problems
-from wagtail_vega.views import FRAME_CSP
+from wagtail_vega.views import frame_csp
 from wagtail_vega.widgets import CodeEditor
 
 from .conftest import VL
@@ -90,8 +90,15 @@ def test_users_without_admin_access_are_refused(no_admin_client, url):
 def test_voyager_page(admin_client):
     response = admin_client.get(FRAME)
     assert response.status_code == 200
-    # Sandboxed even if opened outside the lightbox's iframe
-    assert response["Content-Security-Policy"] == FRAME_CSP == "sandbox allow-scripts"
+    # Sandboxed even if opened outside the lightbox's iframe, and cut off
+    # from the network: the admin page passes the data in
+    csp = [d.strip() for d in response["Content-Security-Policy"].split(";")]
+    assert csp[0] == "sandbox allow-scripts"
+    assert "default-src 'none'" in csp
+    assert "connect-src 'none'" in csp
+    assert "form-action 'none'" in csp
+    assert "base-uri 'none'" in csp
+    assert "script-src 'self' 'unsafe-eval'" in csp
     assert response["X-Frame-Options"] == "SAMEORIGIN"
     html = response.content.decode()
     assert "wagtail_vega/vendor/voyager/voyager.js" in html
@@ -263,3 +270,10 @@ def test_converted_specs_are_valid_v6(fixture, vega_settings):
     assert spec["$schema"] == VL
     assert spec["data"] == {"name": fixture["dataset"]}
     assert spec_problems(spec) == []
+
+
+def test_frame_csp_allows_static_files_on_another_origin(settings):
+    settings.STATIC_URL = "https://cdn.example.org/static/"
+    csp = frame_csp()
+    assert "script-src https://cdn.example.org 'unsafe-eval'" in csp
+    assert "connect-src 'none'" in csp

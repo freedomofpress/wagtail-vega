@@ -100,7 +100,13 @@ def test_opens_lightbox_with_the_dataset(editor, console_errors):
     assert console_errors == []
 
 
-def test_build_chart_and_use_it(editor, chart_page):
+def test_build_chart_and_use_it(editor, chart_page, console_errors):
+    # Report CSP violations from every frame, including Voyager's sandbox
+    editor.add_init_script(
+        """document.addEventListener("securitypolicyviolation", (e) =>
+            console.error(`CSP violation: ${e.violatedDirective} ${e.blockedURI}`))"""
+    )
+    editor.reload()
     textarea = spec_textarea(editor)
     fill_editor(spec_field(editor), "")
     expect(textarea).to_have_value("")
@@ -142,6 +148,8 @@ def test_build_chart_and_use_it(editor, chart_page):
     expect(editor.locator(".messages")).not_to_contain_text("could not be saved")
     revision = ChartPage.objects.get(pk=chart_page.pk).get_latest_revision_as_object()
     assert revision.body[0].value["spec"] == spec
+    # Nothing was blocked by the Voyager page's CSP (or anything else)
+    assert [e for e in console_errors if "CSP violation" in e] == []
 
 
 def test_confirms_before_replacing_a_spec(editor):

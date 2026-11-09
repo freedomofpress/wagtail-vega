@@ -1,11 +1,13 @@
 """Admin views."""
 
 import json
+from urllib.parse import urlsplit
 
 from django.core.exceptions import ValidationError
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.template.response import TemplateResponse
+from django.templatetags.static import static
 from django.utils.translation import gettext as _
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.http import require_GET, require_POST
@@ -45,7 +47,32 @@ def validate_spec(request):
 # admin's cookies or DOM, or make credentialed requests the admin trusts. The
 # iframe has the same sandbox attribute; the header also covers the page
 # being opened on its own.
-FRAME_CSP = "sandbox allow-scripts"
+#
+# The rest of the policy keeps that code from reaching the network: the admin
+# page fetches the data and passes it in with postMessage, so the frame needs
+# no connections, forms or plugins. Scripts, styles, images and fonts may only
+# come from our static files (vega 4 and Voyager need eval and inline styles).
+
+
+def frame_csp() -> str:
+    static_origin = "'self'"
+    parts = urlsplit(static("wagtail_vega/vendor/voyager/voyager.js"))
+    if parts.scheme and parts.netloc:  # static files on another origin (a CDN)
+        static_origin = f"{parts.scheme}://{parts.netloc}"
+    return "; ".join(
+        [
+            "sandbox allow-scripts",
+            "default-src 'none'",
+            f"script-src {static_origin} 'unsafe-eval'",
+            f"style-src {static_origin} 'unsafe-inline'",
+            f"img-src {static_origin} data: blob:",
+            f"font-src {static_origin} data:",
+            "connect-src 'none'",
+            "base-uri 'none'",
+            "form-action 'none'",
+            "frame-ancestors 'self'",
+        ]
+    )
 
 
 def document_permissions():
@@ -66,7 +93,7 @@ def document_permissions():
 def voyager(request):
     """The page Voyager runs in, inside the admin's lightbox iframe."""
     response = TemplateResponse(request, "wagtail_vega/admin/voyager.html")
-    response["Content-Security-Policy"] = FRAME_CSP
+    response["Content-Security-Policy"] = frame_csp()
     return response
 
 
