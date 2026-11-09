@@ -1,0 +1,59 @@
+/* wagtail-vega admin: code editor. The editor's layout and colours are set in
+   code-editor.js with Wagtail's colour tokens, so they follow the admin's
+   light/dark theme; this file adds syntax colours and the status line. */
+
+.wagtail-vega-code {
+  /* Syntax colours, at least 6:1 contrast on the field background */
+  --wagtail-vega-code-key: #005b5e;
+  --wagtail-vega-code-string: #9f3a12;
+  --wagtail-vega-code-number: #1a5aa8;
+  --wagtail-vega-code-literal: #8a37b0;
+}
+
+.w-theme-dark .wagtail-vega-code {
+  --wagtail-vega-code-key: #6fd2cf;
+  --wagtail-vega-code-string: #f2a77c;
+  --wagtail-vega-code-number: #8fb8f5;
+  --wagtail-vega-code-literal: #d7a6f2;
+}
+
+@media (prefers-color-scheme: dark) {
+  .w-theme-system .wagtail-vega-code {
+    --wagtail-vega-code-key: #6fd2cf;
+    --wagtail-vega-code-string: #f2a77c;
+    --wagtail-vega-code-number: #8fb8f5;
+    --wagtail-vega-code-literal: #d7a6f2;
+  }
+}
+
+.wagtail-vega-code .tok-propertyName {
+  color: var(--wagtail-vega-code-key);
+}
+.wagtail-vega-code .tok-string {
+  color: var(--wagtail-vega-code-string);
+}
+.wagtail-vega-code .tok-number {
+  color: var(--wagtail-vega-code-number);
+}
+.wagtail-vega-code :is(.tok-bool, .tok-null, .tok-keyword) {
+  color: var(--wagtail-vega-code-literal);
+}
+.wagtail-vega-code .tok-punctuation {
+  color: var(--w-color-text-meta);
+}
+
+.wagtail-vega-code.is-invalid .cm-editor {
+  border-color: var(--w-color-border-field-error, var(--w-color-critical-200));
+}
+
+.wagtail-vega-code__status {
+  margin: 0.375rem 0 0;
+  font-size: 0.875rem;
+  color: var(--w-color-text-error);
+}
+.wagtail-vega-code__status::before {
+  content: "⚠ ";
+}
+.wagtail-vega-code__status.is-warning {
+  color: var(--w-color-text-meta);
+}

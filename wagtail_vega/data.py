@@ -12,7 +12,7 @@ from typing import Any
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 
-# Keep these in sync with static/wagtail_vega/admin/dataset-block.js
+# Keep these in sync with static/wagtail_vega/admin/data-format.js
 NUMBER_RE = re.compile(r"^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$")
 # "1,234" / "1,234,567.89", as copied from a formatted spreadsheet
 THOUSANDS_RE = re.compile(r"^[-+]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$")

@@ -24,8 +24,9 @@ $ .venv/bin/ruff check . && .venv/bin/ruff format --check .
 | --- | --- |
 | `tests/test_*.py` | Unit tests: spec handling, validation, themes, data parsing, blocks and SSR. |
 | `tests/test_admin.py` | Creating, validating and previewing chart pages through the Wagtail admin. |
-| `tests/e2e/` | Playwright browser tests: the dataset editor, and chart rendering with themes, dark mode, a strict CSP, no JavaScript and URL blocking. Marked `e2e`. |
-| `tests/js/` | Unit tests for the browser scripts' parsing, type detection and security helpers. They use `node:test` and need Node 20 or newer, but no npm packages. |
+| `tests/test_editor.py` | The code editor widget and its telepath adapters, and the live validation endpoint. |
+| `tests/e2e/` | Playwright browser tests: the dataset editor and the code editors, and chart rendering with themes, dark mode, a strict CSP, no JavaScript and URL blocking. Marked `e2e`. |
+| `tests/js/` | Unit tests for the browser scripts: data parsing and type detection, JSON error locations and JSON path mapping, and security helpers. They use `node:test` and need Node 20 or newer, but no npm packages. |
 
 To skip the browser tests, run `pytest -m "not e2e"`. The SSR tests are skipped if vl-convert isn't installed.
 
@@ -97,11 +98,30 @@ $ python scripts/vendor.py
 
 It downloads each package from npm, checks it against npm's integrity hash, and writes the files into `wagtail_vega/static/wagtail_vega/vendor/` and `wagtail_vega/schemas/`. The versions are recorded in `vendor/VERSIONS.json`. Run the full test suite afterwards, including the browser tests.
 
+### CodeMirror
+
+The admin's code editor uses [CodeMirror 6](https://codemirror.net/), which ships as ES modules split over many packages. They're bundled with [esbuild](https://esbuild.github.io/) into one script, `wagtail_vega/static/wagtail_vega/admin/vendor/codemirror.js`, which is committed, so installing wagtail-vega doesn't need Node.
+
+- The packages and esbuild are pinned to exact versions in `package.json` and `package-lock.json`. `npm ci` checks each one against the lockfile's integrity hash.
+- `scripts/codemirror/entry.mjs` lists what's bundled. Export only what `code-editor.js` uses, to keep the bundle small.
+- `scripts/build-codemirror.mjs` writes the bundle, `codemirror.LICENSE` with the licence of every bundled package, and `codemirror.VERSIONS.json`.
+- The build is deterministic. CI runs `npm ci && npm run build` and fails if the result differs from what's committed.
+
+To update CodeMirror, change the versions in `package.json`, then:
+
+```console
+$ npm install
+$ npm run build
+```
+
+Run the full test suite afterwards, including the browser tests, and look at the editor in the sandbox in both light and dark mode.
+
 ## Keeping things in sync
 
 Some logic exists in both Python and JavaScript, and must be changed in both places:
 
-- Pasted data detection and type inference: `wagtail_vega/data.py` and `static/wagtail_vega/admin/dataset-block.js`.
+- Pasted data detection, parsing and type inference: `wagtail_vega/data.py` and `static/wagtail_vega/admin/data-format.js`.
+- The `path: message` format of spec errors: `SpecProblem` in `wagtail_vega/validation.py`, which `static/wagtail_vega/admin/json-source.js` (`splitMessage`) parses to highlight errors after a failed save.
 - Host allowlist matching: `wagtail_vega/spec.py` (`host_allowed`) and `static/wagtail_vega/wagtail-vega.js` (`hostAllowed`).
 - `var()` resolution: `wagtail_vega/themes.py` and `static/wagtail_vega/wagtail-vega.js`.
 

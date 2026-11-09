@@ -2,7 +2,7 @@
 
 [Vega](https://vega.github.io/vega/) and [Vega-Lite](https://vega.github.io/vega-lite/) chart blocks for Wagtail StreamFields.
 
-- **Editors** paste a Vega or Vega-Lite spec and attach data: pasted CSV, JSON or spreadsheet cells, a document, or a URL. They can create new kinds of chart without changing any code.
+- **Editors** paste a Vega or Vega-Lite spec and attach data: pasted CSV, JSON or spreadsheet cells, a document, or a URL. They can create new kinds of chart without changing any code, in a code editor that underlines errors in the spec and data as they type.
 - **Developers** subclass the block to supply data from anywhere, e.g. the database.
 - **Themes** are Vega `config` objects. They can have dark-mode variants and can pull colours from your site's CSS custom properties.
 - **Privacy and security:** the Vega libraries are vendored, so there are no CDN requests. Data hosts are allowlisted, and a CSP-safe mode works without `unsafe-eval`, inline scripts or inline styles.
@@ -82,13 +82,13 @@ WAGTAIL_VEGA_CSP_SAFE=1 WAGTAIL_VEGA_SSR=1 .venv/bin/python manage.py runserver 
 WAGTAIL_VEGA_SANDBOX_AUTOLOGIN=1 .venv/bin/python manage.py runserver  # skip login (for headless screenshots)
 ```
 
-To update the vendored JS and schemas, edit the versions in `scripts/vendor.py` and run it. Each tarball is checked against npm's integrity hash.
+To update the vendored Vega JS and schemas, edit the versions in `scripts/vendor.py` and run it. Each tarball is checked against npm's integrity hash. The admin code editor (CodeMirror 6) is bundled reproducibly from pinned npm packages with `npm ci && npm run build`; the output is committed, so installing the package needs no Node.
 
 See [Testing and contributing](https://wagtail-vega.readthedocs.io/en/latest/contributing.html) for more.
 
 ## Roadmap
 
-- A code editor with live preview in the admin.
+- Live preview next to the code editor.
 - A visual (Voyager-style) chart builder.
 - Developer-defined chart templates that expose only some options to editors.
 - Reusable dataset snippets.

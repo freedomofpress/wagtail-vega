@@ -27,13 +27,19 @@ The URLs editors can enter for URL datasets must also be `http`, `https` or a pa
 
 | What | Checked | How |
 | --- | --- | --- |
-| Literal `url` strings anywhere in a spec | When the page is saved | `SpecBlock` rejects specs with a `url` that isn't relative or on an allowed host. |
+| Literal `url` strings anywhere in a spec | When the page is saved, and as the spec is edited | `SpecBlock` rejects specs with a `url` that isn't relative or on an allowed host. The admin's code editor runs the same check live (see below). |
 | URL datasets entered by editors | When the page is saved | `DatasetBlock` rejects URLs that aren't allowed. |
 | Remote datasets returned by `get_datasets()` | In the browser and during server-side rendering | Not checked on save. |
 | Everything a chart loads in the browser: data, images, and links | Each time it's loaded | A restricted Vega loader refuses URLs that aren't same-origin or on an allowed host. This also covers URLs built at runtime, for example from signals, which can't be checked on save. |
 | Everything vl-convert loads during server-side rendering | Each time a chart is rendered | vl-convert may only fetch from the literal, allowed, absolute URLs in the spec. Specs that use relative URLs aren't server-rendered. |
 
 The allowlist is copied into each chart's payload so the browser can enforce it.
+
+### Live validation in the admin
+
+The spec editor checks the spec as it's edited by posting it to `/admin/wagtail-vega/validate-spec/` ({py:func}`wagtail_vega.views.validate_spec`). Like the rest of the admin, the endpoint needs a logged-in user with permission to access the Wagtail admin, and Django's CSRF protection applies. It runs the same checks as saving a page, {py:func}`~wagtail_vega.validation.spec_problems`, and doesn't save or fetch anything. Its responses can tell an admin user which hosts aren't allowed, which they could find out by saving anyway.
+
+The editor itself, CodeMirror 6, is vendored like the Vega libraries (see {doc}`contributing`), so the admin makes no CDN requests either.
 
 Some consequences:
 

@@ -5,12 +5,15 @@ import vm from "node:vm";
 
 const STATIC = fileURLToPath(new URL("../../wagtail_vega/static/wagtail_vega/", import.meta.url));
 
-export function loadScript(path, globals = {}) {
+/** Run one or more scripts (in order) in a fresh context. */
+export function loadScript(paths, globals = {}) {
   const window = { ...globals };
   window.window = window;
   window.globalThis = window;
   const context = vm.createContext(window);
-  vm.runInContext(readFileSync(STATIC + path, "utf8"), context, { filename: path });
+  for (const path of [paths].flat()) {
+    vm.runInContext(readFileSync(STATIC + path, "utf8"), context, { filename: path });
+  }
   return window;
 }
 
@@ -37,13 +40,35 @@ export function loadFrontend(extra = {}) {
   });
 }
 
+const ADMIN_HELPERS = ["admin/json-source.js", "admin/data-format.js"];
+
+function adminGlobals(registered, extra = {}) {
+  return {
+    wagtailStreamField: {
+      blocks: { StructBlockDefinition: class {}, FieldBlockDefinition: class {} },
+    },
+    telepath: {
+      constructors: { "wagtail.widgets.Widget": class {} },
+      register: (name, cls) => {
+        registered[name] = cls;
+      },
+    },
+    document: {},
+    ...extra,
+  };
+}
+
+/** The dataset block and the helpers it needs. */
 export function loadAdmin() {
   const registered = {};
-  const window = loadScript("admin/dataset-block.js", {
-    wagtailStreamField: { blocks: { StructBlockDefinition: class {} } },
-    telepath: { register: (name, cls) => { registered[name] = cls; } },
-    document: {},
-  });
+  const window = loadScript([...ADMIN_HELPERS, "admin/dataset-block.js"], adminGlobals(registered));
+  return { window, registered };
+}
+
+/** The code editor's helpers (CodeMirror itself isn't loaded). */
+export function loadCodeEditor() {
+  const registered = {};
+  const window = loadScript([...ADMIN_HELPERS, "admin/code-editor.js"], adminGlobals(registered));
   return { window, registered };
 }
 
