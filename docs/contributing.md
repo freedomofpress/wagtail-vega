@@ -145,6 +145,9 @@ User-facing strings in Python and templates are marked for translation. To start
 
 ```sh
 django-admin makemessages -l de
+django-admin makemessages -l de -d djangojs --ignore "static/wagtail_vega/vendor/*" --ignore "static/wagtail_vega/admin/vendor/*"
 ```
 
-Then translate `wagtail_vega/locale/de/LC_MESSAGES/django.po`, compile it with `django-admin compilemessages`, and open a pull request.
+The first collects strings from Python and templates, including all the chart editor's text (`builder_strings.py`). The second collects the admin scripts' messages, such as the JSON error messages and the pasted-data summary, which call `gettext()` and `ngettext()`. The admin loads their translations from Django's JavaScript catalogue at `/admin/wagtail-vega/jsi18n/`.
+
+Then translate `wagtail_vega/locale/de/LC_MESSAGES/django.po` and `djangojs.po`, compile them with `django-admin compilemessages`, and open a pull request.

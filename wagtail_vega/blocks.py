@@ -54,7 +54,7 @@ from .spec import (
 )
 from .themes import Theme, get_theme, resolve_css_vars, theme_choices
 from .validation import SpecProblem, spec_problems
-from .widgets import EDITOR_JS, CodeEditor
+from .widgets import EDITOR_JS, CodeEditor, admin_js
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +167,7 @@ class CodeFieldBlockAdapter(FieldBlockAdapter):
 
     @cached_property
     def media(self):
-        return super().media + forms.Media(js=EDITOR_JS)
+        return super().media + forms.Media(js=admin_js(EDITOR_JS))
 
 
 register(CodeFieldBlockAdapter(), JSONBlock)
@@ -328,9 +328,13 @@ class DatasetBlockAdapter(StructBlockAdapter):
         return forms.Media(
             js=[
                 *media._js,
-                "wagtail_vega/admin/json-source.js",
-                "wagtail_vega/admin/data-format.js",
-                "wagtail_vega/admin/dataset-block.js",
+                *admin_js(
+                    [
+                        "wagtail_vega/admin/json-source.js",
+                        "wagtail_vega/admin/data-format.js",
+                        "wagtail_vega/admin/dataset-block.js",
+                    ]
+                ),
             ],
             css={"all": ["wagtail_vega/admin/dataset-block.css"]},
         )

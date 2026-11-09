@@ -245,3 +245,23 @@ def test_api_representation(client, home):
     assert donations["spec"]["datasets"]["donations"] == [{"month": "2026-01-01", "total": 12.5}]
     # The raw editor input isn't exposed
     assert "paste" not in json.dumps(chart)
+
+
+def test_javascript_catalogue(admin_client, client):
+    """The admin scripts' translations (#8): Django's JavaScriptCatalog for
+    wagtail_vega, admin only."""
+    url = reverse("wagtail_vega_jsi18n")
+    response = admin_client.get(url)
+    assert response.status_code == 200
+    assert response["Content-Type"].startswith("text/javascript")
+    assert b"django.catalog" in response.content
+    assert client.get(url).status_code == 302  # login required
+
+
+def test_edit_page_loads_the_catalogue_before_admin_scripts(admin_client, add_url):
+    assert admin_client.post(add_url, page_form(chart(), publish=False)).status_code == 302
+    page = ChartPage.objects.get()
+    html = admin_client.get(reverse("wagtailadmin_pages:edit", args=(page.pk,))).content.decode()
+    catalogue = html.index(reverse("wagtail_vega_jsi18n"))
+    assert catalogue < html.index("wagtail_vega/admin/data-format.js")
+    assert catalogue < html.index("wagtail_vega/admin/json-source.js")

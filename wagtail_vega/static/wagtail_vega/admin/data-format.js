@@ -13,15 +13,33 @@
 (() => {
   "use strict";
 
+  // Translations come from Django's JavaScript catalogue (wagtail_vega's
+  // djangojs domain, loaded by the admin), looked up when a message is made.
+  // Without a catalogue, the English text is used.
+  const gettext = (s) => (window.gettext ? window.gettext(s) : s);
+  const ngettext = (s, p, n) => (window.ngettext ? window.ngettext(s, p, n) : n === 1 ? s : p);
+  const fill = (s, params) => s.replace(/%\((\w+)\)s/g, (m, k) => (k in params ? String(params[k]) : m));
+
   const { jsonSource } = window.wagtailVegaAdmin;
 
   const DELIMITERS = { tsv: "\t", csv: ",", ssv: ";" }; // ties go to the first
-  const FORMAT_LABELS = {
-    tsv: "Tab-separated (e.g. copied from a spreadsheet)",
-    csv: "Comma-separated",
-    ssv: "Semicolon-separated",
-    json: "JSON",
-  };
+  // Looked up when used, so the active translation applies
+  const formatLabel = (fmt) =>
+    ({
+      tsv: () => gettext("Tab-separated (e.g. copied from a spreadsheet)"),
+      csv: () => gettext("Comma-separated"),
+      ssv: () => gettext("Semicolon-separated"),
+      json: () => gettext("JSON"),
+    })[fmt]();
+  const typeLabel = (type) =>
+    ({
+      number: () => gettext("number"),
+      text: () => gettext("text"),
+      date: () => gettext("date"),
+      "true/false": () => gettext("true/false"),
+      empty: () => gettext("empty"),
+      mixed: () => gettext("mixed"),
+    })[type]();
   const NUMBER_RE = /^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$/;
   const THOUSANDS_RE = /^[-+]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/;
   const LEADING_ZERO_RE = /^[-+]?0\d/;
@@ -136,14 +154,12 @@
       if (data && typeof data === "object" && !Array.isArray(data) && "values" in data) {
         data = data.values;
       }
-      if (!Array.isArray(data)) throw new Error("JSON data must be an array of rows.");
+      if (!Array.isArray(data)) throw new Error(gettext("JSON data must be an array of rows."));
       return data;
     }
     const [header = [], ...rows] = parseDelimited(text.trim(), DELIMITERS[fmt] ?? ",");
     return rows.map((row) => Object.fromEntries(header.map((name, i) => [name, coerce(row[i] ?? "")])));
   }
-
-  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
   /**
    * Read pasted text. Returns null for blank text, otherwise
@@ -165,7 +181,10 @@
       const { root, error } = jsonSource.parse(text, start);
       if (error) {
         const { line, column } = jsonSource.lineColumn(text, error.from);
-        result.error = `This looks like JSON but couldn't be read: ${error.message} (line ${line}, column ${column}).`;
+        result.error = fill(
+          gettext("This looks like JSON but couldn't be read: %(error)s (line %(line)s, column %(column)s)."),
+          { error: error.message, line, column },
+        );
         problem("error", error.message, error.from, error.to);
         return result;
       }
@@ -176,7 +195,7 @@
         node = jsonSource.find(root, ["values"]).node;
       }
       if (!Array.isArray(data)) {
-        result.error = "JSON data must be an array of rows.";
+        result.error = gettext("JSON data must be an array of rows.");
         const { from, to } = jsonSource.rangeForPath(root, []);
         problem("error", result.error, from, to);
         return result;
@@ -184,7 +203,7 @@
       data.forEach((r, i) => {
         if (!r || typeof r !== "object" || Array.isArray(r)) {
           const item = node.items[i];
-          problem("warning", "Each row should be an object, like {\"name\": value}.", item.from, item.type === "object" || item.type === "array" ? item.from + 1 : item.to);
+          problem("warning", gettext("Each row should be an object, like {\"name\": value}."), item.from, item.type === "object" || item.type === "array" ? item.from + 1 : item.to);
         }
       });
       result.header = [...new Set(data.flatMap((r) => (r && typeof r === "object" ? Object.keys(r) : [])))];
@@ -202,14 +221,21 @@
         const { line } = jsonSource.lineColumn(text, from);
         problem(
           "warning",
-          `Line ${line} has ${plural(r.length, "value")} but there are ${result.header.length} columns.`,
+          fill(
+            ngettext(
+              "Line %(line)s has %(count)s value but there are %(columns)s columns.",
+              "Line %(line)s has %(count)s values but there are %(columns)s columns.",
+              r.length,
+            ),
+            { line, count: r.length, columns: result.header.length },
+          ),
           from,
           spans[i][1] + offset,
         );
       });
     }
     if (!result.rows.length && !result.error) {
-      result.error = "No data rows found. The first row should be the column names.";
+      result.error = gettext("No data rows found. The first row should be the column names.");
     }
     return result;
   }
@@ -220,14 +246,24 @@
     if (!result) return null;
     if (result.error) return { ok: false, message: result.error };
     const { format, header, rows, problems } = result;
-    const columns = header.map((name, i) => `${name || "(blank)"} (${columnType(rows.map((r) => r[i]))})`);
-    const listed = columns.slice(0, MAX_COLUMNS_LISTED).join(", ");
-    const more = columns.length > MAX_COLUMNS_LISTED ? `, and ${columns.length - MAX_COLUMNS_LISTED} more` : "";
+    const columns = header.map((name, i) =>
+      fill(gettext("%(name)s (%(type)s)"), {
+        name: name || gettext("(blank)"),
+        type: typeLabel(columnType(rows.map((r) => r[i]))),
+      }),
+    );
+    let listed = columns.slice(0, MAX_COLUMNS_LISTED).join(", ");
+    const hidden = columns.length - MAX_COLUMNS_LISTED;
+    if (hidden > 0) listed = fill(gettext("%(columns)s, and %(count)s more"), { columns: listed, count: hidden });
     let warning = problems[0]?.message ?? "";
-    if (problems.length > 1) warning += ` ${problems.length - 1} more ${problems.length === 2 ? "row has" : "rows have"} problems too.`;
+    if (problems.length > 1) {
+      const others = problems.length - 1;
+      warning += " " + fill(ngettext("%(count)s more row has problems too.", "%(count)s more rows have problems too.", others), { count: others });
+    }
+    const rowCount = fill(ngettext("%(count)s row", "%(count)s rows", rows.length), { count: rows.length });
     return {
       ok: true,
-      message: `${FORMAT_LABELS[format]} · ${plural(rows.length, "row")} · ${listed}${more}`,
+      message: `${formatLabel(result.format)} · ${rowCount} · ${listed}`,
       warning,
     };
   }
