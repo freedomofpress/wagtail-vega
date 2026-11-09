@@ -125,13 +125,28 @@ def test_dataset_block_loads_the_data_helpers():
 def test_vendored_codemirror_matches_package_json():
     package = json.loads((ROOT / "package.json").read_text())
     bundled = json.loads((VENDOR / "codemirror.VERSIONS.json").read_text())
-    for name, version in package["devDependencies"].items():
-        if name != "esbuild":
-            assert bundled[name] == version, name
+    codemirror = {
+        name: version
+        for name, version in package["devDependencies"].items()
+        if name.startswith(("@codemirror/", "@lezer/"))
+    }
+    assert codemirror
+    for name, version in codemirror.items():
+        assert bundled[name] == version, name
     bundle = (VENDOR / "codemirror.js").read_text()
     assert bundle.startswith("/* CodeMirror 6 for wagtail-vega")
     assert "wagtailVegaCodeMirror" in bundle
     assert (VENDOR / "codemirror.LICENSE").exists()
+
+
+def test_vendored_vega_matches_package_json():
+    """The vendored Vega libraries are the versions pinned for npm."""
+    package = json.loads((ROOT / "package.json").read_text())
+    vendored = json.loads(
+        (ROOT / "wagtail_vega/static/wagtail_vega/vendor/VERSIONS.json").read_text()
+    )
+    assert vendored == {name: package["devDependencies"][name] for name in vendored}
+    assert set(vendored) == {"vega", "vega-lite", "vega-embed"}
 
 
 # -- Validation ---------------------------------------------------------------
