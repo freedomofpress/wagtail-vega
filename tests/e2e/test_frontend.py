@@ -1,5 +1,7 @@
 """Charts render in a real browser: themes, dark mode, CSP, no-JS, security."""
 
+import re
+
 import pytest
 from playwright.sync_api import expect
 
@@ -320,3 +322,30 @@ def test_page_body_without_context_loads_scripts_once(page, live_server, chart_p
     assert page.locator("script[src*='wagtail-vega-loader.js']").count() == 4
     assert sum("vendor/vega.min.js" in u for u in requests) == 1
     assert page.evaluate("document.querySelectorAll('script[src*=\"vega.min.js\"]').length") == 1
+
+
+def test_tooltip_follows_dark_mode(browser, live_server, chart_page):
+    page = browser.new_page(color_scheme="dark")
+    page.goto(live_server.url + chart_page.url)
+    wait_for_charts(page)
+    page.locator(CHARTS).first.locator(".mark-rect path").first.hover()
+    tooltip = page.locator("#vg-tooltip-element")
+    expect(tooltip).to_have_class(re.compile(r"\bvisible\b"))
+    expect(tooltip).to_have_class(re.compile(r"\bdark-theme\b"))
+    # Styled by wagtail-vega.css (nothing injected at runtime)
+    assert page.locator("style#vega-tooltip-style").count() == 0
+    assert tooltip.evaluate("e => getComputedStyle(e).position") == "fixed"
+
+
+def test_actions_menu_is_styled(page, live_server, chart_page, vega_settings):
+    vega_settings["EMBED_OPTIONS"] = {"actions": {"export": True, "source": False}}
+    page.goto(live_server.url + chart_page.url)
+    wait_for_charts(page)
+    menu = page.locator(CHARTS).first.locator(".vega-actions")
+    expect(menu).to_be_attached()
+    # vega-embed's own styles, shipped in wagtail-vega.css rather than injected
+    style = menu.evaluate(
+        "e => { const s = getComputedStyle(e); return [s.position, s.flexDirection]; }"
+    )
+    assert style == ["absolute", "column"]
+    assert page.locator("style#vega-embed-style").count() == 0

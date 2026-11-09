@@ -551,3 +551,99 @@ def test_messages_for_readers(vega_settings, vl_bar):
     html = block.render(value)
     assert "This chart needs JavaScript to display.</p>" in html
     assert 'data-error-message="Sorry, this chart couldn&#x27;t be displayed."' in html
+
+
+@pytest.mark.parametrize(
+    "url", ["/\\evil.example/x.csv", " //evil.example/x.csv", "/\t/evil.example/x"]
+)
+def test_dataset_url_rejects_urls_browsers_resolve_elsewhere(vega_settings, url):
+    vega_settings["ALLOWED_DATA_HOSTS"] = ["ok.org"]
+    block = DatasetBlock()
+    with pytest.raises(StructBlockValidationError):
+        block.clean(block.to_python({"name": "s", "source_type": "url", "url": url}))
+
+
+# -- The site's own hosts (#5) --------------------------------------------------
+
+
+@pytest.fixture
+def own_site(db, settings):
+    from wagtail.models import Site
+
+    settings.WAGTAILADMIN_BASE_URL = "https://admin.example.org"
+    site = Site.objects.get(is_default_site=True)
+    site.hostname = "www.example.org"
+    site.save()
+    Site.objects.create(hostname="localhost", port=8001, root_page=site.root_page)
+    return site
+
+
+def test_site_hosts(own_site):
+    from wagtail_vega.conf import get_allowed_hosts, site_hosts
+
+    assert site_hosts() == ["admin.example.org", "www.example.org"]  # no localhost
+    assert set(get_allowed_hosts()) >= {"admin.example.org", "www.example.org"}
+
+
+def test_own_site_absolute_urls_are_allowed(own_site, vega_settings, vl_bar):
+    vl_bar["data"] = {"url": "https://www.example.org/media/data.csv"}
+    assert SpecBlock().clean(vl_bar)
+    vl_bar["data"] = {"url": "http://localhost/data.csv"}
+    with pytest.raises(ValidationError, match="localhost"):
+        SpecBlock().clean(vl_bar)
+    block = DatasetBlock()
+    url = "https://admin.example.org/media/d.csv"
+    assert block.clean(block.to_python({"name": "s", "source_type": "url", "url": url}))
+
+
+def test_own_site_hosts_reach_the_browser(own_site, vega_settings, vl_bar):
+    block = ChartBlock()
+    chart = block.build_chart(chart_value(block, vl_bar))
+    assert "www.example.org" in chart.payload["allowedHosts"]
+
+
+def test_blocked_urls_from_code_are_logged(vega_settings, vl_bar, caplog):
+    from wagtail_vega.spec import remote_data
+
+    class FromAPI(BaseChartBlock):
+        def get_datasets(self, value, context=None):
+            return {
+                "source": remote_data("https://api.elsewhere.example/rows.csv"),
+                "local": remote_data("/media/rows.csv"),
+            }
+
+    block = FromAPI()
+    block.build_chart(block.to_python({"spec": vl_bar}))
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert "FromAPI.get_datasets()" in warnings[0] and "api.elsewhere.example" in warnings[0]
+
+
+# -- Embed options (#2) ---------------------------------------------------------
+
+
+def test_embed_options_merge_over_defaults(vega_settings, vl_bar):
+    vega_settings["EMBED_OPTIONS"] = {"renderer": "canvas"}
+    block = ChartBlock()
+    options = block.build_chart(chart_value(block, vl_bar)).embed_options
+    assert options["renderer"] == "canvas"
+    assert options["actions"] is False  # default kept
+    assert options["defaultStyle"] is False
+    assert options["tooltip"] == {"disableDefaultStyle": True}
+
+
+def test_tooltip_options_are_kept(vega_settings, vl_bar):
+    class Custom(ChartBlock):
+        class Meta:
+            embed_options = {"tooltip": {"offsetX": 20, "theme": "custom"}, "actions": True}
+
+    block = Custom()
+    options = block.build_chart(chart_value(block, vl_bar)).embed_options
+    assert options["tooltip"] == {"offsetX": 20, "theme": "custom", "disableDefaultStyle": True}
+    assert options["actions"] is True
+
+
+def test_tooltips_can_be_turned_off(vega_settings, vl_bar):
+    vega_settings["EMBED_OPTIONS"] = {"tooltip": False}
+    block = ChartBlock()
+    assert block.build_chart(chart_value(block, vl_bar)).embed_options["tooltip"] is False

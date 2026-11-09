@@ -165,4 +165,4 @@ html = block.render(value, context={"request": request})
 
 Without a `request` in the context, each chart outputs a small loader script instead of the library scripts, and the loader makes sure the libraries load only once per page. In a Wagtail page template, `{% include_block %}` passes the page's context, including `request`, on to the block.
 
-`ChartBlock` doesn't have its own API representation, so in the Wagtail API it appears as the raw block value: the spec, and the dataset settings as the editor entered them.
+In the Wagtail API, chart blocks appear as the final spec plus everything needed to render it, not the editor's raw input. See [](frontend.md#the-wagtail-api).

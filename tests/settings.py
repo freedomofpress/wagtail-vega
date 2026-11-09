@@ -10,6 +10,8 @@ ALLOWED_HOSTS = ["*"]
 INSTALLED_APPS = [
     "wagtail_vega",
     "tests.testapp",
+    "wagtail.api.v2",
+    "rest_framework",
     "wagtail.contrib.forms",
     "wagtail.contrib.redirects",
     "wagtail.embeds",

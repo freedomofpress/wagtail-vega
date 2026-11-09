@@ -50,9 +50,7 @@ A full definition
   : The name of a theme bundled with vega-embed, used underneath `config`. See [](#built-in-themes).
 
 A plain dict
-: If a dict has none of the keys `config`, `dark`, `fallbacks` or `vega_theme`, the whole dict is used as the config.
-
-  This means a `label` in a plain dict ends up in the config rather than naming the theme. To give a theme a label, use a full definition.
+: If a dict has none of the keys `config`, `dark`, `fallbacks` or `vega_theme`, it's used as the config. A `label` key in it still names the theme: `{"label": "Print", "font": "Times"}`.
 
 A dotted path
 : The import path of a dict (either kind) or a {py:class}`~wagtail_vega.themes.Theme`, for themes that are too long for settings.
@@ -60,7 +58,9 @@ A dotted path
 `"vega:<name>"`
 : A theme bundled with vega-embed.
 
-A misconfigured theme raises `ImproperlyConfigured` when themes are loaded, which happens when a chart is rendered or the theme choices are built.
+`manage.py check` (which `runserver` and `migrate` also run) reports misconfigured themes (`wagtail_vega.E001`), a `DEFAULT_THEME` that isn't in `THEMES` (`wagtail_vega.E002`), and chart blocks whose `Meta.theme` isn't in `THEMES` (`wagtail_vega.E003`). A misconfigured theme also raises `ImproperlyConfigured` when themes are loaded, which happens when a chart is rendered or the theme choices are built.
+
+If an editor picked a theme that has since been removed from `THEMES`, the chart uses the default theme, and a warning is logged on the `wagtail_vega.themes` logger.
 
 `DEFAULT_THEME` is the name of the theme used when neither the block nor the editor picks one. It must be a key in `THEMES`. If it's `None` (the default) and no theme is picked, charts use Vega's own defaults.
 
