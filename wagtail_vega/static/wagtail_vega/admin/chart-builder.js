@@ -584,15 +584,15 @@
                 </div>
                 <p class="wagtail-vega-builder__hint" data-mode-note hidden></p>
               </fieldset>
+              <div class="wagtail-vega-builder__dataset" data-dataset-picker hidden>
+                <label for="${id}-dataset">${e("dataset")}</label>
+                <select id="${id}-dataset" data-dataset></select>
+              </div>
               <div class="wagtail-vega-builder__voyager" data-mode-pane="voyager" hidden>
                 <p class="wagtail-vega-builder__voyager-mouse">${e("voyager.mouse")} <button type="button" class="button button-small button-secondary" data-use-simple>${e("voyager.useSimple")}</button></p>
                 <div class="wagtail-vega-builder__notice" data-voyager-notice hidden>
                   <div id="${id}-voyager-note" data-voyager-note></div>
                   <button type="button" class="button button-small" data-voyager-fresh aria-describedby="${id}-voyager-note" hidden>${e("voyager.startFresh")}</button>
-                </div>
-                <div class="wagtail-vega-builder__dataset" data-voyager-dataset-picker hidden>
-                  <label for="${id}-voyager-dataset">${e("dataset")}</label>
-                  <select id="${id}-voyager-dataset" data-voyager-dataset></select>
                 </div>
                 <p class="wagtail-vega-builder__voyager-status" data-voyager-status aria-live="polite"></p>
                 <div class="wagtail-vega-builder__voyager-host" data-voyager-host hidden></div>
@@ -608,10 +608,6 @@
                 </div>
                 <fieldset class="wagtail-vega-builder__settings" data-controls-fieldset>
                   <legend class="visually-hidden">${e("controls")}</legend>
-                  <div class="wagtail-vega-builder__dataset" data-dataset-picker hidden>
-                    <label for="${id}-dataset">${e("dataset")}</label>
-                    <select id="${id}-dataset" data-dataset></select>
-                  </div>
                   <div class="wagtail-vega-builder__controls" data-controls></div>
                 </fieldset>
               </div>
@@ -843,8 +839,6 @@
         this.$("[data-mode][value=simple]").focus();
       });
       this.$("[data-voyager-fresh]").addEventListener("click", () => this.reloadVoyager({ fresh: true }));
-      const select = this.$("[data-voyager-dataset]");
-      select.addEventListener("change", () => this.switchVoyagerDataset(select.value));
       this.visualMode = mode;
       this.showModePanes();
     }
@@ -899,20 +893,20 @@
     open() {
       this.dialog = this.buildDialog();
       this.setupTabs();
-      // The same datasets for the Simple settings and for Voyager
-      for (const select of [this.$("[data-dataset]"), this.$("[data-voyager-dataset]")]) {
-        for (const dataset of this.datasets) select.add(new Option(dataset.name, dataset.name));
-        for (const name of this.extraNames) {
-          const option = new Option(t("codeDataset", { name }), name);
-          option.disabled = true;
-          select.add(option);
-        }
-        if (this.datasetName) select.value = this.datasetName;
-      }
+      // One dataset picker, for both the Simple settings and Voyager
       const select = this.$("[data-dataset]");
+      for (const dataset of this.datasets) select.add(new Option(dataset.name, dataset.name));
+      for (const name of this.extraNames) {
+        const option = new Option(t("codeDataset", { name }), name);
+        option.disabled = true;
+        select.add(option);
+      }
+      if (this.datasetName) select.value = this.datasetName;
       this.$("[data-dataset-picker]").hidden = this.datasets.length + this.extraNames.length < 2;
-      this.$("[data-voyager-dataset-picker]").hidden = this.$("[data-dataset-picker]").hidden;
-      select.addEventListener("change", () => this.switchDataset(select.value));
+      select.addEventListener("change", () => {
+        if (this.visualMode === "voyager") this.switchVoyagerDataset(select.value);
+        else this.switchDataset(select.value);
+      });
 
       const scheme = this.$("[data-scheme]");
       scheme.value = this.scheme;
@@ -1537,7 +1531,6 @@
       this.voyagerDataset = name;
       if (name && this.datasets.some((d) => d.name === name)) {
         this.datasetName = name;
-        this.$("[data-voyager-dataset]").value = name;
         this.$("[data-dataset]").value = name;
       }
 

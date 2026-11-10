@@ -102,11 +102,21 @@
   function fromVoyagerSpec(voyagerSpec, datasetName, previous) {
     const spec = clone(voyagerSpec);
     for (const key of ["$schema", "data", "datasets"]) delete spec[key];
+    const steps = {};
     if (isObject(spec.encoding)) {
-      for (const def of Object.values(spec.encoding)) {
+      for (const [channel, def] of Object.entries(spec.encoding)) {
         if (!isObject(def)) continue;
         // Vega-Lite 2 wrote count as {"aggregate": "count", "field": "*"}
         if (def.aggregate === "count" && def.field === "*") delete def.field;
+        // ...and the size of a band as the scale's rangeStep, which is
+        // now the view's {"step": ...}
+        if (isObject(def.scale) && "rangeStep" in def.scale) {
+          const step = def.scale.rangeStep;
+          delete def.scale.rangeStep;
+          if (typeof step === "number" && (channel === "x" || channel === "y")) {
+            steps[channel === "x" ? "width" : "height"] = { step };
+          }
+        }
         for (const [key, value] of Object.entries(def)) {
           if (isObject(value) && Object.keys(value).length === 0) delete def[key];
         }
@@ -116,6 +126,10 @@
     const prev = isVegaLite(previous) ? previous : null;
     for (const key of CARRY_OVER) {
       if (prev && key in prev && !(key in spec)) out[key] = clone(prev[key]);
+    }
+    // A width or height kept from the field's spec wins over Voyager's step
+    for (const [key, value] of Object.entries(steps)) {
+      if (!(key in out) && !(key in spec)) out[key] = value;
     }
     out.data = { name: datasetName };
     Object.assign(out, spec);

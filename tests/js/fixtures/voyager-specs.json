@@ -157,5 +157,58 @@
         "y": {"field": "n", "type": "quantitative", "aggregate": "mean"}
       }
     }
+  },
+  {
+    "name": "Vega-Lite 2's rangeStep becomes the view's step",
+    "dataset": "source",
+    "voyager": {
+      "data": {"name": "source"},
+      "mark": "tick",
+      "encoding": {
+        "x": {"field": "cat", "type": "nominal", "scale": {"rangeStep": 12}},
+        "y": {"field": "n", "type": "quantitative"}
+      }
+    },
+    "expected": {
+      "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+      "width": {"step": 12},
+      "data": {"name": "source"},
+      "mark": "tick",
+      "encoding": {
+        "x": {"field": "cat", "type": "nominal"},
+        "y": {"field": "n", "type": "quantitative"}
+      }
+    }
+  },
+  {
+    "name": "...unless the field's spec sets the width",
+    "dataset": "weather",
+    "previous": {
+      "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+      "title": "Weather",
+      "width": "container",
+      "data": {"name": "weather"},
+      "mark": "bar",
+      "encoding": {"x": {"field": "date", "timeUnit": "month", "type": "ordinal"}}
+    },
+    "voyager": {
+      "data": {"name": "source"},
+      "mark": "tick",
+      "encoding": {
+        "x": {"timeUnit": "month", "field": "date", "type": "nominal", "scale": {"rangeStep": 12, "zero": false}},
+        "y": {"aggregate": "count", "field": "*", "type": "quantitative"}
+      }
+    },
+    "expected": {
+      "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+      "title": "Weather",
+      "width": "container",
+      "data": {"name": "weather"},
+      "mark": "tick",
+      "encoding": {
+        "x": {"timeUnit": "month", "field": "date", "type": "nominal", "scale": {"zero": false}},
+        "y": {"aggregate": "count", "type": "quantitative"}
+      }
+    }
   }
 ]

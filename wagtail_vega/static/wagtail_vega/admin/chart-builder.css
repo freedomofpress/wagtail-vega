@@ -240,7 +240,7 @@ html.wagtail-vega-builder-open {
 .wagtail-vega-builder__settings:disabled {
   opacity: 0.6;
 }
-.wagtail-vega-builder__settings > .wagtail-vega-builder__dataset {
+.wagtail-vega-builder__panel--visual > .wagtail-vega-builder__dataset {
   margin-bottom: 1.25rem;
 }
 .wagtail-vega-builder__notice {
