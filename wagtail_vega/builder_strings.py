@@ -237,6 +237,9 @@ def builder_strings() -> dict[str, str]:
         "error.document": _("Couldn't load the document (%(status)s)."),
         "error.host": _("Data can't be loaded from %(url)s."),
         "error.url": _("Couldn't load %(url)s (%(status)s)."),
+        "error.source": _(
+            "“%(name)s” can't be previewed here: data from %(source)s is only loaded on the site."
+        ),
         "error.check": _("Couldn't check the spec (%(status)s)."),
         "error.library": _("Couldn't load %(src)s."),
     }

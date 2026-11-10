@@ -4,6 +4,9 @@
  *
  * - analyse(text): format, header, rows and problems (with source ranges).
  * - summarise(text): the one-line summary shown under the paste field.
+ * - summariseRows(rows): the same summary for rows that are already read,
+ *   such as a custom source's.
+ * - renderSummary(el, summary): shows either summary, or an error.
  * - diagnose(text): the problems, for the code editor to mark in place.
  * - parseRows(text, format): typed rows, as the server parses them.
  *
@@ -240,32 +243,108 @@
     return result;
   }
 
+  /** "name (type), …" for the columns, given each one's type, with the
+   * number of columns not listed. */
+  function listColumns(header, types) {
+    const columns = header.map((name, i) =>
+      fill(gettext("%(name)s (%(type)s)"), { name: name || gettext("(blank)"), type: typeLabel(types[i]) }),
+    );
+    let listed = columns.slice(0, MAX_COLUMNS_LISTED).join(", ");
+    const hidden = columns.length - MAX_COLUMNS_LISTED;
+    if (hidden > 0) listed = fill(gettext("%(columns)s, and %(count)s more"), { columns: listed, count: hidden });
+    return listed;
+  }
+
+  const rowCount = (count) => fill(ngettext("%(count)s row", "%(count)s rows", count), { count });
+
   /** Returns {ok, message, warning} describing the pasted text, or null. */
   function summarise(text) {
     const result = analyse(text);
     if (!result) return null;
     if (result.error) return { ok: false, message: result.error };
-    const { format, header, rows, problems } = result;
-    const columns = header.map((name, i) =>
-      fill(gettext("%(name)s (%(type)s)"), {
-        name: name || gettext("(blank)"),
-        type: typeLabel(columnType(rows.map((r) => r[i]))),
-      }),
+    const { header, rows, problems } = result;
+    const listed = listColumns(
+      header,
+      header.map((_, i) => columnType(rows.map((r) => r[i]))),
     );
-    let listed = columns.slice(0, MAX_COLUMNS_LISTED).join(", ");
-    const hidden = columns.length - MAX_COLUMNS_LISTED;
-    if (hidden > 0) listed = fill(gettext("%(columns)s, and %(count)s more"), { columns: listed, count: hidden });
     let warning = problems[0]?.message ?? "";
     if (problems.length > 1) {
       const others = problems.length - 1;
       warning += " " + fill(ngettext("%(count)s more row has problems too.", "%(count)s more rows have problems too.", others), { count: others });
     }
-    const rowCount = fill(ngettext("%(count)s row", "%(count)s rows", rows.length), { count: rows.length });
     return {
       ok: true,
-      message: `${formatLabel(result.format)} · ${rowCount} · ${listed}`,
+      message: `${formatLabel(result.format)} · ${rowCount(rows.length)} · ${listed}`,
       warning,
     };
+  }
+
+  /** The type of a value in rows that are already typed (from JSON):
+   * numbers, true/false, dates (ISO 8601 strings) and text. */
+  function rowValueType(value) {
+    if (value === null || value === undefined || value === "") return null;
+    if (typeof value === "boolean") return "true/false";
+    if (typeof value === "number") return "number";
+    if (typeof value === "string") return DATE_RE.test(value.trim()) ? "date" : "text";
+    return "text";
+  }
+
+  const isRow = (row) => Boolean(row) && typeof row === "object" && !Array.isArray(row);
+
+  /** Returns {ok, message, warning} describing rows that are already read,
+   * such as a custom source's rows from the server: the number of rows, and
+   * the columns with their types. */
+  function summariseRows(rows) {
+    if (!Array.isArray(rows)) return { ok: false, message: gettext("The data isn't a list of rows.") };
+    if (!rows.length) return { ok: false, message: gettext("No rows found.") };
+    const objects = rows.filter(isRow);
+    const header = [...new Set(objects.flatMap((row) => Object.keys(row)))];
+    const types = header.map((name) => {
+      const found = new Set(objects.map((row) => rowValueType(row[name])).filter(Boolean));
+      if (found.size === 0) return "empty";
+      return found.size === 1 ? [...found][0] : "mixed";
+    });
+    const others = rows.length - objects.length;
+    const warning = others
+      ? fill(
+          ngettext(
+            "%(count)s row isn't an object, like {\"name\": value}.",
+            "%(count)s rows aren't objects, like {\"name\": value}.",
+            others,
+          ),
+          { count: others },
+        )
+      : "";
+    const parts = [rowCount(rows.length)];
+    if (header.length) parts.push(listColumns(header, types));
+    return { ok: true, message: parts.join(" · "), warning };
+  }
+
+  /** A summary line: the symbol is decoration, so screen readers skip it. */
+  function summaryLine(symbol, text) {
+    const line = document.createElement("p");
+    const icon = document.createElement("span");
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = `${symbol} `;
+    line.append(icon, text);
+    return line;
+  }
+
+  /** Show a summary ({ok, message, warning}, from summarise() or
+   * summariseRows(), or {ok: false, message} for an error) in `el`, as the
+   * pasted data's summary is shown. Hides `el` when `result` is null. */
+  function renderSummary(el, result) {
+    el.classList.add("wagtail-vega-summary");
+    el.replaceChildren();
+    el.hidden = !result;
+    if (!result) return;
+    el.classList.toggle("is-error", !result.ok);
+    el.append(summaryLine(result.ok ? "✓" : "⚠", result.message));
+    if (result.warning) {
+      const warn = summaryLine("⚠", result.warning);
+      warn.className = "wagtail-vega-summary__warning";
+      el.append(warn);
+    }
   }
 
   /** Problems with the pasted text, as {from, to, severity, message}. */
@@ -281,6 +360,9 @@
     columnType,
     analyse,
     summarise,
+    summariseRows,
+    rowValueType,
+    renderSummary,
     diagnose,
     coerce,
     parseRows,

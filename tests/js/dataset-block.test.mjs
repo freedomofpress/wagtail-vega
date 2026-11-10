@@ -175,3 +175,94 @@ test("diagnose: nothing to say", () => {
   assert.deepEqual(plain(diagnose("")), []);
   assert.deepEqual(plain(diagnose("quarter\trequests\nQ1\t1,200\n")), []);
 });
+
+// -- Custom sources (#34) -------------------------------------------------------
+
+test("exposes the definition for subclasses to extend", () => {
+  assert.equal(window.wagtailVegaAdmin.DatasetBlockDefinition, registered["wagtail_vega.blocks.DatasetBlock"]);
+  assert.equal(typeof window.wagtailVegaAdmin.registerSource, "function");
+});
+
+test("summariseRows: typed rows from a source", () => {
+  const { summariseRows } = window.wagtailVegaAdmin.dataFormat;
+  const result = summariseRows([
+    { quarter: "Q1", month: "2026-01-01", total: 120.75, final: true },
+    { quarter: "Q2", month: "2026-04-01", total: null, final: false, note: "late" },
+  ]);
+  assert.deepEqual(plain(result), {
+    ok: true,
+    message: "2 rows · quarter (text), month (date), total (number), final (true/false), note (text)",
+    warning: "",
+  });
+  // Strings stay text, even if they look like numbers (unlike pasted text)
+  assert.equal(summariseRows([{ zip: "02134", n: "1,000" }]).message, "1 row · zip (text), n (text)");
+  assert.equal(summariseRows([{ a: 1 }, { a: "x" }, { a: null }]).message, "3 rows · a (mixed)");
+  assert.equal(summariseRows([{ a: null }]).message, "1 row · a (empty)");
+  const many = Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`c${i}`, i]));
+  assert.match(summariseRows([many]).message, /c7 \(number\), and 2 more$/);
+});
+
+test("summariseRows: problems", () => {
+  const { summariseRows } = window.wagtailVegaAdmin.dataFormat;
+  assert.deepEqual(plain(summariseRows([])), { ok: false, message: "No rows found." });
+  assert.deepEqual(plain(summariseRows({ rows: [] })), { ok: false, message: "The data isn't a list of rows." });
+  const result = summariseRows([{ a: 1 }, [1], 2]);
+  assert.equal(result.ok, true);
+  assert.equal(result.message, "3 rows · a (number)");
+  assert.equal(result.warning, '2 rows aren\'t objects, like {"name": value}.');
+});
+
+/** Just enough of an element for renderSummary(). */
+function fakeElement(tag) {
+  const classes = new Set();
+  return {
+    tag,
+    hidden: false,
+    className: "",
+    children: [],
+    attributes: {},
+    textContent: "",
+    classList: {
+      add: (c) => classes.add(c),
+      toggle: (c, on) => (on ? classes.add(c) : classes.delete(c)),
+      contains: (c) => classes.has(c),
+    },
+    setAttribute(name, value) {
+      this.attributes[name] = value;
+    },
+    replaceChildren() {
+      this.children = [];
+    },
+    append(...nodes) {
+      this.children.push(...nodes);
+    },
+    get text() {
+      if (!this.children.length) return this.textContent;
+      return this.children.map((c) => (typeof c === "string" ? c : c.text)).join("");
+    },
+  };
+}
+
+test("renderSummary shows a summary or an error like the paste field's", () => {
+  const { renderSummary, summariseRows } = window.wagtailVegaAdmin.dataFormat;
+  window.document = { createElement: fakeElement };
+  const el = fakeElement("div");
+  renderSummary(el, summariseRows([{ a: 1 }]));
+  assert.equal(el.hidden, false);
+  assert.ok(el.classList.contains("wagtail-vega-summary"));
+  assert.equal(el.classList.contains("is-error"), false);
+  assert.equal(el.text, "✓ 1 row · a (number)");
+  assert.equal(el.children[0].children[0].attributes["aria-hidden"], "true");
+
+  renderSummary(el, { ok: false, message: "There are no donations in 2025." });
+  assert.ok(el.classList.contains("is-error"));
+  assert.equal(el.text, "⚠ There are no donations in 2025.");
+
+  renderSummary(el, { ok: true, message: "2 rows", warning: "Careful." });
+  assert.equal(el.classList.contains("is-error"), false);
+  assert.equal(el.children[1].className, "wagtail-vega-summary__warning");
+
+  renderSummary(el, null);
+  assert.equal(el.hidden, true);
+  assert.equal(el.children.length, 0);
+});
