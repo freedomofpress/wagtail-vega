@@ -76,7 +76,10 @@ def open_builder(page):
 
 
 def builder_spec(page):
-    return json.loads(spec_field(page).locator("textarea").input_value())
+    """The spec the editor wrote into the field, once it has written one."""
+    textarea = spec_field(page).locator("textarea")
+    expect(textarea).to_have_value(re.compile(r'"name": "donations"'))
+    return json.loads(textarea.input_value())
 
 
 def test_custom_source_fields_follow_the_toggle(editor, console_errors):
