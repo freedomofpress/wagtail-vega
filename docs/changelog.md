@@ -8,6 +8,11 @@ First release.
 
 - `ChartBlock`, for Vega and Vega-Lite charts with named datasets that editors paste, upload as documents or load from URLs.
 - `BaseChartBlock`, for charts with data supplied from code.
+- Custom dataset source types, for data that editors choose per dataset from your own database, next to Paste / Document / URL (#34):
+  - `DatasetBlock.source_fields`, `clean_source()`, `get_source_dataset()` and `field_order`, and the `SOURCE_CHOICES` list; `SOURCE_FIELDS` is kept for compatibility. System checks (`wagtail_vega.E004`–`E006`) catch sources and fields that don't match.
+  - The admin form shows and hides a new source's fields with no extra script, and `DatasetBlock.source_rows_urls` with the `SourceRowsView` admin view gives it a live summary and chart editor previews.
+  - In the browser: `wagtailVegaAdmin.registerSource()`, `sources.readFields()`, `dataFormat.summariseRows()` and `renderSummary()`, and the `DatasetBlockDefinition` class. `DatasetBlockAdapter.extra_js` and `extra_css` load a subclass's own scripts in order.
+  - The chart editor never reads the pasted data of a dataset whose source isn't Paste; a source it can't load is listed with a note.
 - Themes, with dark mode and CSS custom properties.
 - Data host allowlist, CSP-safe mode and optional server-side rendering.
 - `wagtail-vega:rendered` and `wagtail-vega:error` events; data that fails to load is reported as an error.

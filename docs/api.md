@@ -25,11 +25,22 @@ This reference is generated from the code's docstrings. The guides explain how t
    :undoc-members:
 
 .. autoclass:: wagtail_vega.blocks.DatasetBlock
-   :members: get_dataset
-   :undoc-members:
+   :members: source_fields, source_rows_urls, get_source, clean_source, get_dataset, get_source_dataset, check
 
    Fields: ``name``, ``source_type`` (``"paste"``, ``"document"`` or
-   ``"url"``), ``paste``, ``document``, ``url`` and ``format``.
+   ``"url"``), ``paste``, ``document``, ``url`` and ``format``. See
+   :ref:`custom-source-types` for adding sources.
+
+.. autodata:: wagtail_vega.blocks.SOURCE_CHOICES
+   :no-value:
+
+.. autodata:: wagtail_vega.blocks.SOURCE_FIELDS
+   :no-value:
+
+.. autoclass:: wagtail_vega.blocks.DatasetBlockAdapter
+   :members: extra_js, extra_css
+
+.. autoclass:: wagtail_vega.blocks.FieldOrderMixin
 
 .. autoclass:: wagtail_vega.blocks.SpecBlock
 
@@ -60,7 +71,31 @@ The editor follows, as one change that can be undone. The editor also fires `inp
 
 ```{eval-rst}
 .. autofunction:: wagtail_vega.views.validate_spec
+
+.. autofunction:: wagtail_vega.views.document_rows
+
+.. autoclass:: wagtail_vega.views.SourceRowsView
+   :members: get_rows
 ```
+
+## Admin scripts
+
+The admin scripts expose these on `window.wagtailVegaAdmin`, for the scripts of custom dataset sources (see {ref}`custom-source-types`). Anything else on it is internal.
+
+`registerSource(name, {loadRows, hasData?, key?})`
+: Lets the chart editor load a custom source's rows in the browser. `loadRows(datasetEl, config)` returns the rows, or a promise of them, or throws an `Error` whose message is shown. `hasData(datasetEl)` says whether the dataset has any data yet (default: true). `key(datasetEl)` returns a string that changes when the rows would, if they depend on more than the source's fields.
+
+`sources.readFields(datasetEl, names)`
+: `{name: [value, …]}` for the dataset's fields: checked checkboxes and radio buttons, selected options, and the values of other inputs and textareas. Rows URL requests read fields this way.
+
+`dataFormat.summariseRows(rows)`
+: A summary of rows, `{ok, message, warning}`, such as `{ok: true, message: "12 rows · month (date), incidents (number)", warning: ""}`.
+
+`dataFormat.renderSummary(element, summary)`
+: Shows a summary from `summariseRows()` (or `{ok: false, message}`, for an error) in `element`, with the same markup and styles as the pasted data's summary. `null` hides it.
+
+`DatasetBlockDefinition`
+: The dataset block's telepath definition, to extend.
 
 ## Themes
 
