@@ -157,8 +157,16 @@ def test_vendored_vega_matches_package_json():
     vendored = json.loads(
         (ROOT / "wagtail_vega/static/wagtail_vega/vendor/VERSIONS.json").read_text()
     )
+    voyager = vendored.pop("voyager")
     assert vendored == {name: package["devDependencies"][name] for name in vendored}
     assert set(vendored) == {"vega", "vega-lite", "vega-embed"}
+    # Voyager's frozen dependencies; the old vega packages are aliased
+    pins = dict(package["devDependencies"])
+    for name in ("vega", "vega-lite", "vega-tooltip"):
+        pins[name] = pins.pop(f"voyager-{name}").removeprefix(f"npm:{name}@")
+    assert voyager["datavoyager"] == "2.0.0-alpha.24"
+    for name, version in voyager.items():
+        assert pins[name] == version, name
 
 
 # -- Validation ---------------------------------------------------------------
