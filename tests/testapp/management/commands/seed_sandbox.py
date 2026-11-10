@@ -18,5 +18,5 @@ class Command(BaseCommand):
         site = Site.objects.get(is_default_site=True)
         site.hostname, site.port, site.site_name = "localhost", 8000, "sandbox"
         site.save()
-        page = create_demo_page()
+        page = create_demo_page(custom_source=True)
         self.stdout.write(self.style.SUCCESS(f"Seeded {page.url_path}; login admin/admin"))

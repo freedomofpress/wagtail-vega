@@ -114,11 +114,53 @@ REMOTE = {
 
 SEATTLE_WEATHER = "https://vega.github.io/vega-datasets/data/seattle-weather.csv"
 
+DONATIONS_BY_QUARTER = {
+    "$schema": VL,
+    "title": "Donations by quarter (a custom source)",
+    "width": "container",
+    "data": {"name": "donations"},
+    "mark": "bar",
+    "encoding": {
+        "x": {"field": "quarter", "type": "nominal", "title": None},
+        "y": {"field": "total", "type": "quantitative"},
+    },
+}
 
-def demo_body(weather_url=SEATTLE_WEATHER):
+
+def custom_source_chart():
+    """A chart whose dataset an editor chose from the Donation model (the
+    "donations" source of DonationsDatasetBlock), as a StreamField item."""
+    return (
+        "donations_source_chart",
+        {
+            "spec": DONATIONS_BY_QUARTER,
+            "theme": "",
+            "data": [
+                {
+                    "name": "donations",
+                    "source_type": "donations",
+                    "year": "2026",
+                    "group_by": ["quarter"],
+                }
+            ],
+            "description": "Donations per quarter in 2026.",
+            "caption": "Data chosen by the editor from the Donation model",
+        },
+    )
+
+
+def demo_body(weather_url=SEATTLE_WEATHER, custom_source=False):
     """StreamField content with four charts: pasted TSV (Vega-Lite), pasted
     JSON (raw Vega with an expression), a database-backed subclass, and a
-    URL dataset."""
+    URL dataset. With ``custom_source``, a fifth: a dataset from a custom
+    source type."""
+    return [
+        *_demo_charts(weather_url),
+        *([custom_source_chart()] if custom_source else []),
+    ]
+
+
+def _demo_charts(weather_url):
     amounts = [
         {"category": c, "amount": a}
         for c, a in zip("ABCDEFGH", [28, 55, 43, 91, 81, 53, 19, 87], strict=True)
@@ -199,11 +241,16 @@ def ensure_site():
     return site
 
 
-def create_demo_page(weather_url=SEATTLE_WEATHER, make_site_root=True):
+def create_demo_page(
+    weather_url=SEATTLE_WEATHER, make_site_root=True, custom_source=False, body=None
+):
+    """The demo page (or a page with ``body``), published."""
     create_donations()
     site = ensure_site()
     parent = Page.objects.get(depth=1) if make_site_root else site.root_page
-    page = ChartPage(title="Chart examples", slug="charts", body=demo_body(weather_url))
+    if body is None:
+        body = demo_body(weather_url, custom_source)
+    page = ChartPage(title="Chart examples", slug="charts", body=body)
     parent.add_child(instance=page)
     page.save_revision().publish()
     if make_site_root:
