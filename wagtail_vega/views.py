@@ -5,7 +5,9 @@ import json
 from django.core.exceptions import ValidationError
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404
+from django.utils.decorators import method_decorator
 from django.utils.translation import gettext as _
+from django.views import View
 from django.views.decorators.http import require_GET, require_POST
 from wagtail.admin.auth import require_admin_access
 from wagtail.documents import get_document_model
@@ -74,3 +76,43 @@ def document_rows(request):
         message = e.messages[0] if isinstance(e, ValidationError) else str(e)
         return JsonResponse({"error": _("Couldn't read this data: %s") % message}, status=400)
     return JsonResponse({"rows": rows}, encoder=VegaJSONEncoder)
+
+
+@method_decorator(require_admin_access, name="dispatch")
+class SourceRowsView(View):
+    """The rows of a custom dataset source, for the admin: the dataset's
+    summary and the chart editor's preview. Pairs with
+    ``DatasetBlock.source_rows_urls``, and answers like ``document_rows``.
+
+    The admin sends a GET request with the source's fields as query
+    parameters, named after the fields, and repeated for fields with several
+    values (such as a multiple choice): read them with ``request.GET.get()``
+    and ``request.GET.getlist()``. Implement ``get_rows()`` to return the
+    rows. They're sent as ``{"rows": [...]}``, encoded as charts encode them
+    (``VegaJSONEncoder``: Decimals become numbers, dates ISO 8601 strings).
+    Raise ``ValidationError`` to show the editor a message instead; it's sent
+    as ``{"error": "..."}``, with status 400.
+
+    Admin users only. Register it with Wagtail's ``register_admin_urls``
+    hook::
+
+        @hooks.register("register_admin_urls")
+        def register_admin_urls():
+            return [
+                path("incident-rows/", IncidentRowsView.as_view(), name="incident_rows"),
+            ]
+    """
+
+    http_method_names = ["get", "head", "options"]
+
+    def get_rows(self, request) -> list[dict]:
+        """The rows for the fields in ``request.GET``. Subclasses implement
+        this."""
+        raise NotImplementedError(f"{type(self).__name__} must implement get_rows().")
+
+    def get(self, request, *args, **kwargs):
+        try:
+            rows = self.get_rows(request)
+        except ValidationError as e:
+            return JsonResponse({"error": " ".join(e.messages)}, status=400)
+        return JsonResponse({"rows": list(rows)}, encoder=VegaJSONEncoder)
