@@ -47,7 +47,7 @@ export function loadFrontend(extra = {}) {
   });
 }
 
-const ADMIN_HELPERS = ["admin/json-source.js", "admin/data-format.js"];
+const ADMIN_HELPERS = ["admin/json-source.js", "admin/data-format.js", "admin/sources.js"];
 
 function adminGlobals(registered, extra = {}) {
   return {

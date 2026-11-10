@@ -1,6 +1,6 @@
 # Custom data sources
 
-`ChartBlock` takes its data from the editor. To supply data from your own code, subclass {py:class}`~wagtail_vega.blocks.BaseChartBlock` and override {py:meth}`~wagtail_vega.blocks.BaseChartBlock.get_datasets`.
+`ChartBlock` takes its data from the editor. To supply data from your own code, subclass {py:class}`~wagtail_vega.blocks.BaseChartBlock` and override {py:meth}`~wagtail_vega.blocks.BaseChartBlock.get_datasets`. To let editors choose your data for a dataset, add a [source type](#custom-source-types-for-editors).
 
 `BaseChartBlock` has a **Spec**, a **Description** and a **Caption**, but no data or theme fields. Editors write the spec, and refer to your datasets by name.
 
@@ -217,6 +217,204 @@ class RegionalChartBlock(ChartBlock):
 ```
 
 Editors can then use `{"lookup": "region", "from": {"data": {"name": "regions"}, "key": "code", "fields": ["name"]}}` in their specs.
+
+(custom-source-types)=
+
+## Custom source types for editors
+
+The options above supply data from code, with names you choose. To let **editors** pick your data for a dataset, with a name they choose, add a **source type** next to Paste / Document / URL. Editors then choose, say, **Tracker incidents** on the dataset's **Source** toggle, fill in that source's fields (a filter, how to count), and the rows are queried on the server when the page is rendered. The source works with the chart editor's preview and the check for datasets the spec loads but the chart doesn't have.
+
+A source type takes:
+
+1. A {py:class}`~wagtail_vega.blocks.DatasetBlock` subclass, with the source in its `source_type` choices and its fields in `source_fields`, and its rows from `get_source_dataset()`.
+2. Optionally, an admin view that returns its rows for the admin, named in `source_rows_urls`. With it, editors see a summary of the rows under the source's fields ("✓ 12 rows · month (date), incidents (number)"), and the chart editor previews and builds charts from them. Without it, the chart editor lists the dataset but says it can't be previewed.
+3. A `ChartBlock` subclass that uses your dataset block.
+
+No JavaScript is needed.
+
+### The dataset block
+
+This example adds a "Tracker incidents" source: editors paste the URL of a filtered list of incidents, and choose how to count them.
+
+```python
+from django import forms
+from django.core.exceptions import ValidationError
+from wagtail import blocks
+from wagtail_vega.blocks import PASTE, SOURCE_CHOICES, ChartBlock, DatasetBlock
+
+from .incidents import count_incidents, parse_filter
+
+GROUP_BY = [("month", "Month"), ("category", "Category"), ("state", "State")]
+
+
+class IncidentDatasetBlock(DatasetBlock):
+    # Which fields belong to which source: the form shows only the selected
+    # source's fields, and saving resets the other sources' fields
+    source_fields = {
+        **DatasetBlock.source_fields,
+        "incidents": ("incident_filter", "group_by"),
+    }
+    # The admin view that returns the source's rows (see below)
+    source_rows_urls = {"incidents": "tracker_incident_rows"}
+    # The new fields go right after the toggle, not after "format"
+    field_order = ("name", "source_type", "incident_filter", "group_by")
+
+    source_type = blocks.ChoiceBlock(
+        choices=[("incidents", "Tracker incidents"), *SOURCE_CHOICES],
+        default="incidents",
+        widget=forms.RadioSelect,
+        label="Source",
+    )
+    incident_filter = blocks.CharBlock(
+        required=False, help_text="The URL of a filtered list of incidents."
+    )
+    group_by = blocks.MultipleChoiceBlock(
+        choices=GROUP_BY, required=False, widget=forms.CheckboxSelectMultiple
+    )
+
+    def clean_source(self, source, value):
+        if source == "incidents":
+            try:
+                parse_filter(value["incident_filter"])
+            except ValueError as e:
+                return {"incident_filter": ValidationError(str(e))}
+            return {}
+        return super().clean_source(source, value)
+
+    def get_source_dataset(self, source, value):
+        if source == "incidents":
+            return count_incidents(parse_filter(value["incident_filter"]), value["group_by"])
+        return super().get_source_dataset(source, value)
+
+
+class IncidentChartBlock(ChartBlock):
+    data = blocks.ListBlock(IncidentDatasetBlock(), min_num=0)
+```
+
+Use `IncidentChartBlock` in your StreamFields instead of `ChartBlock`. Specs load the dataset by the name the editor gave it, as for any other dataset.
+
+`source_fields`
+: `{source: (field name, …)}` for every source, the built-in ones included (`DatasetBlock.source_fields`). A source with no fields has `()`. A field can belong to more than one source; it's kept when any of them is selected.
+
+`source_type`
+: Redeclare it with your source in its choices. `SOURCE_CHOICES` has the built-in ones; leave out any you don't want editors to use, and remove them from `source_fields` too.
+
+`clean_source(source, value)`
+: Called when the dataset is saved, after each field's own validation, with the selected source. Return `{field name: ValidationError}`; an empty dict means all is well. The default checks the built-in sources and accepts any other, so a source without its own checks needs no code here.
+
+`get_source_dataset(source, value)`
+: The data for the selected source, in [the dataset format](#the-dataset-format): a list of rows, or a remote dataset. Call `super()` for the built-in sources. A source that nothing handles has no rows, and logs a warning. It runs whenever the chart is rendered, so cache slow queries.
+
+`field_order`
+: As for [chart blocks](adding-charts.md#field-order).
+
+wagtail-vega checks the block when Django runs its system checks: every `source_type` choice needs a `source_fields` entry and the other way around (`wagtail_vega.E004`), every field in `source_fields` must be a field of the block (`wagtail_vega.E005`), and `source_rows_urls` may only name sources in `source_fields` (`wagtail_vega.E006`).
+
+### The rows URL
+
+Subclass {py:class}`~wagtail_vega.views.SourceRowsView` and implement `get_rows()`. The admin sends a GET request with the source's fields as query parameters, named after the fields, and repeated for fields with several values, such as `?incident_filter=…&group_by=month&group_by=state`. Return the rows; raise `ValidationError` to show the editor a message instead.
+
+```python
+from django.core.exceptions import ValidationError
+from wagtail_vega.views import SourceRowsView
+
+from .incidents import count_incidents, parse_filter
+
+
+class IncidentRowsView(SourceRowsView):
+    def get_rows(self, request):
+        try:
+            incident_filter = parse_filter(request.GET.get("incident_filter", ""))
+        except ValueError as e:
+            raise ValidationError(str(e)) from e
+        return count_incidents(incident_filter, request.GET.getlist("group_by"))
+```
+
+Register it in your app's `wagtail_hooks.py`, with the URL name you put in `source_rows_urls`:
+
+```python
+from django.urls import path
+from wagtail import hooks
+
+from .views import IncidentRowsView
+
+
+@hooks.register("register_admin_urls")
+def register_admin_urls():
+    return [
+        path("incident-rows/", IncidentRowsView.as_view(), name="tracker_incident_rows"),
+    ]
+```
+
+The view only answers users who can use the Wagtail admin. It responds like wagtail-vega's own document endpoint: `{"rows": [...]}`, encoded as charts encode their data (`Decimal`s become numbers, dates ISO 8601 strings), or `{"error": "…"}` with status 400. A `source_rows_urls` value is a URL name, resolved with `reverse()` when the form is built, or a path starting with `/`; it must be on your site.
+
+The dataset's summary is fetched again, 300 ms after its fields stop changing. The chart editor fetches the rows when it opens and when it redraws a field's preview, and keeps them while the fields don't change.
+
+The test project's `tests/testapp` has a working example: `DonationsDatasetBlock` in `models.py`, `DonationRowsView` in `views.py`, and the URL in `wagtail_hooks.py`.
+
+### Rows from a script instead
+
+If the browser can make a source's rows itself, register the source in a script rather than writing a view:
+
+```js
+window.wagtailVegaAdmin.registerSource("incidents", {
+  // Optional: whether the dataset has any data yet (default: true)
+  hasData(datasetEl) {
+    const { incident_filter } = window.wagtailVegaAdmin.sources.readFields(datasetEl, ["incident_filter"]);
+    return Boolean(incident_filter[0]);
+  },
+  // The rows, or a promise of them. Throw an Error to show its message.
+  async loadRows(datasetEl, config) {
+    const { incident_filter } = window.wagtailVegaAdmin.sources.readFields(datasetEl, ["incident_filter"]);
+    const response = await fetch(`/api/incidents/counts/?${new URL(incident_filter).search.slice(1)}`);
+    if (!response.ok) throw new Error(`Couldn't count the incidents (${response.status}).`);
+    return (await response.json()).results;
+  },
+});
+```
+
+`datasetEl` is the dataset block's element. `wagtailVegaAdmin.sources.readFields(datasetEl, names)` returns `{name: [value, …]}` for its fields, the way the rows URL request reads them. The chart editor keeps the rows while the source's fields (from `source_fields`) don't change; if `loadRows()` depends on anything else, also give the source a `key(datasetEl)` function that returns a string that changes with it.
+
+A source's rows URL, if it has one, is used rather than a registered script. To show a summary for a registered source, use `wagtailVegaAdmin.dataFormat.summariseRows(rows)` and `wagtailVegaAdmin.dataFormat.renderSummary(element, summary)`, which show it with the same markup and styles as the pasted data's summary. `renderSummary(element, {ok: false, message})` shows an error.
+
+### Loading your own scripts
+
+To load a script for your dataset block, register a subclass of `DatasetBlockAdapter` for it and list the script in `extra_js` (and any stylesheets in `extra_css`). They're loaded after wagtail-vega's admin scripts, so `window.wagtailVegaAdmin` is ready:
+
+```python
+from wagtail.admin.telepath import register
+from wagtail_vega.blocks import DatasetBlockAdapter
+
+
+class IncidentDatasetBlockAdapter(DatasetBlockAdapter):
+    extra_js = ("tracker/admin/incident-source.js",)
+
+
+register(IncidentDatasetBlockAdapter(), IncidentDatasetBlock)
+```
+
+:::{warning}
+Don't add your script with `super().media + forms.Media(js=[...])`. Django's `Media` merge only keeps the relative order of scripts that are in both lists, so your script may load before wagtail-vega's and find nothing to use. `extra_js` builds one ordered list.
+:::
+
+The form's behaviour is the `window.wagtailVegaAdmin.DatasetBlockDefinition` telepath class. To change it, extend it, register it under a constructor name of your own, and set the adapter's `js_constructor` to that name:
+
+```js
+class IncidentDatasetBlockDefinition extends window.wagtailVegaAdmin.DatasetBlockDefinition {
+  render(placeholder, prefix, initialState, initialError) {
+    const block = super.render(placeholder, prefix, initialState, initialError);
+    // …
+    return block;
+  }
+}
+window.telepath.register("tracker.IncidentDatasetBlock", IncidentDatasetBlockDefinition);
+```
+
+```python
+class IncidentDatasetBlockAdapter(DatasetBlockAdapter):
+    js_constructor = "tracker.IncidentDatasetBlock"
+    extra_js = ("tracker/admin/incident-dataset-block.js",)
+```
 
 ## A chart defined in code
 

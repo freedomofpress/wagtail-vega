@@ -33,7 +33,11 @@ def admin_js(paths):
     return [reverse("wagtail_vega_jsi18n"), *paths]
 
 
-BUILDER_JS = ["wagtail_vega/admin/chart-spec.js", "wagtail_vega/admin/chart-builder.js"]
+BUILDER_JS = [
+    "wagtail_vega/admin/sources.js",
+    "wagtail_vega/admin/chart-spec.js",
+    "wagtail_vega/admin/chart-builder.js",
+]
 BUILDER_CSS = "wagtail_vega/admin/chart-builder.css"
 # Loaded by the chart builder the first time it opens, for its preview, so
 # edit pages don't load the Vega libraries until they're needed

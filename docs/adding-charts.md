@@ -109,7 +109,7 @@ If the JSON can't be parsed, the editor's text is shown again with the error, so
 
 ## Datasets
 
-Each item in the `data` list is a {py:class}`~wagtail_vega.blocks.DatasetBlock`, with a **name** and a **source**. Editors pick a source with a Paste / Document / URL toggle, and only the inputs for that source are shown. When the page is saved, inputs for the other sources are cleared.
+Each item in the `data` list is a {py:class}`~wagtail_vega.blocks.DatasetBlock`, with a **name** and a **source**. Editors pick a source with a Paste / Document / URL toggle, and only the inputs for that source are shown. When the page is saved, inputs for the other sources are cleared. To add sources of your own, such as data from your database, see [custom source types](custom-data.md#custom-source-types-for-editors).
 
 Names must start with a letter or underscore and contain only letters, numbers, hyphens and underscores. They must be unique within a chart. The default name is `source`.
 

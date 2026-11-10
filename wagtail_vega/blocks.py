@@ -11,6 +11,10 @@ override ``get_datasets()`` to supply data from anywhere, e.g. the database::
             return {"source": list(Donation.objects.values("month", "total"))}
 
 The spec refers to datasets by name: ``{"data": {"name": "source"}}``.
+
+``DatasetBlock`` is the extension point for new kinds of data that editors
+choose per dataset, next to Paste / Document / URL: see its
+``source_fields``, ``clean_source()`` and ``get_source_dataset()``.
 """
 
 from __future__ import annotations
@@ -29,6 +33,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator, URLValidator
 from django.forms.fields import InvalidJSONInput
 from django.forms.utils import ErrorList
+from django.urls import reverse
 from django.utils.functional import cached_property
 from django.utils.html import json_script
 from django.utils.translation import gettext_lazy as _
@@ -57,6 +62,26 @@ from .validation import SpecProblem, spec_problems
 from .widgets import EDITOR_JS, CodeEditor, admin_js
 
 logger = logging.getLogger(__name__)
+
+
+class FieldOrderMixin:
+    """Lets a StructBlock subclass set ``field_order``: a tuple of child block
+    names shown first, in that order. Unlisted fields follow in declaration
+    order, and names the block doesn't have are ignored. Subclasses inherit
+    the order."""
+
+    field_order: tuple[str, ...] = ()
+
+    def __init__(self, *args, **kwargs):
+        if self.field_order:
+            # StructBlock.__init__ copies base_blocks, so an instance attribute
+            # set here decides the order on all supported Wagtail versions.
+            declared = type(self).base_blocks
+            names = [n for n in self.field_order if n in declared]
+            names += [n for n in declared if n not in names]
+            self.base_blocks = collections.OrderedDict((n, declared[n]) for n in names)
+        super().__init__(*args, **kwargs)
+
 
 # --------------------------------------------------------------------------
 # JSON input
@@ -178,6 +203,11 @@ register(CodeFieldBlockAdapter(), JSONBlock)
 # --------------------------------------------------------------------------
 
 PASTE, DOCUMENT, URL = "paste", "document", "url"
+#: The built-in sources, as ``(value, label)`` choices for ``source_type``.
+#: Extend it to add a source: ``[*SOURCE_CHOICES, ("incidents", "Incidents")]``.
+SOURCE_CHOICES = [(PASTE, _("Paste")), (DOCUMENT, _("Document")), (URL, _("URL"))]
+#: The built-in sources' fields. ``DatasetBlock.source_fields`` is what's
+#: used; this name is kept for compatibility.
 SOURCE_FIELDS = {PASTE: ("paste",), DOCUMENT: ("document",), URL: ("url", "format")}
 
 
@@ -230,9 +260,35 @@ class DocumentDataBlock(DocumentChooserBlock):
         return value
 
 
-class DatasetBlock(blocks.StructBlock):
+class DatasetBlock(FieldOrderMixin, blocks.StructBlock):
     """A named dataset. Editors pick where the data comes from with a
-    Paste / Document / URL toggle; only the matching inputs are shown."""
+    Paste / Document / URL toggle; only the matching inputs are shown.
+
+    To add a source of your own, subclass it and:
+
+    - add the source to the ``source_type`` choices (see ``SOURCE_CHOICES``),
+      and its fields to ``source_fields``;
+    - return its rows from ``get_source_dataset()``, and check its fields in
+      ``clean_source()`` if they need it;
+    - optionally, name an admin URL that returns its rows in
+      ``source_rows_urls`` (see ``wagtail_vega.views.SourceRowsView``), so
+      editors see a summary of the data and can build charts from it.
+
+    Set ``field_order`` to show your fields next to the source toggle. See
+    "Custom source types for editors" in the docs.
+    """
+
+    #: Each source's fields: ``{source: (field name, ...)}``. When a dataset
+    #: is saved, the fields of every source but the selected one are reset to
+    #: their defaults (except fields the selected source uses too), and the
+    #: admin form only shows the selected source's fields.
+    source_fields: dict[str, tuple[str, ...]] = SOURCE_FIELDS
+
+    #: Admin URLs that return a source's rows, for the dataset's summary and
+    #: the chart editor: ``{source: URL name}``, or a path starting with "/".
+    #: URL names are resolved with ``reverse()`` when the form is built. The
+    #: built-in sources don't need one.
+    source_rows_urls: dict[str, str] = {}
 
     name = blocks.CharBlock(
         default="source",
@@ -246,7 +302,7 @@ class DatasetBlock(blocks.StructBlock):
         help_text=_('The name the spec uses to refer to this data, e.g. "source".'),
     )
     source_type = blocks.ChoiceBlock(
-        choices=[(PASTE, _("Paste")), (DOCUMENT, _("Document")), (URL, _("URL"))],
+        choices=SOURCE_CHOICES,
         default=PASTE,
         widget=forms.RadioSelect,
         label=_("Source"),
@@ -280,9 +336,35 @@ class DatasetBlock(blocks.StructBlock):
         label = _("Dataset")
         form_classname = "wagtail-vega-dataset"
 
+    def get_source(self, value) -> str:
+        """The selected source (``"paste"`` if none is)."""
+        return value.get("source_type") or PASTE
+
     def clean(self, value):
         value = super().clean(value)
-        source = value["source_type"] or PASTE
+        source = self.get_source(value)
+        errors = self.clean_source(source, value)
+        if errors:
+            raise StructBlockValidationError(block_errors=errors)
+
+        # Reset the other sources' inputs, so stale data isn't kept
+        keep = set(self.source_fields.get(source, ()))
+        for other, names in self.source_fields.items():
+            if other == source:
+                continue
+            for name in names:
+                if name not in keep and name in self.child_blocks:
+                    value[name] = self.child_blocks[name].get_default()
+        return value
+
+    def clean_source(self, source: str, value) -> dict[str, ValidationError]:
+        """Check the selected ``source``'s inputs, after each field's own
+        validation. Returns ``{field name: ValidationError}``, empty if all is
+        well; each error is shown on its field.
+
+        The built-in sources require their data (and an allowed host, for a
+        URL). Any other source needs no validation unless you add it: override
+        this, check your source, and call ``super()`` for the others."""
         errors = {}
         if source == PASTE:
             try:
@@ -300,30 +382,136 @@ class DatasetBlock(blocks.StructBlock):
                 errors["url"] = ValidationError(_("Enter a URL."))
             elif not host_allowed(value["url"], get_allowed_hosts()):
                 errors["url"] = ValidationError(_("Data can't be loaded from this host."))
-        if errors:
-            raise StructBlockValidationError(block_errors=errors)
-
-        # Drop inputs for the other source types so stale data isn't kept
-        for other, names in SOURCE_FIELDS.items():
-            if other != source:
-                for name in names:
-                    value[name] = self.child_blocks[name].get_default()
-        return value
+        return errors
 
     def get_dataset(self, value):
-        source = value["source_type"] or PASTE
+        """The dataset for the chart: what ``get_source_dataset()`` returns
+        for the selected source."""
+        return self.get_source_dataset(self.get_source(value), value)
+
+    def get_source_dataset(self, source: str, value):
+        """The data for ``source``: a list of rows, or a remote dataset (see
+        "The dataset format" in the docs). Override this to handle your own
+        sources, and call ``super()`` for the others.
+
+        A source that nothing handles has no rows, and logs a warning."""
+        if source == PASTE:
+            return parse_text(value["paste"])
         if source == DOCUMENT:
             return document_rows(value["document"]) if value["document"] else []
         if source == URL:
             return remote_data(value["url"], value["format"] or None)
-        return parse_text(value["paste"])
+        logger.warning(
+            "wagtail-vega: %s.get_source_dataset() doesn't handle source %r; the dataset is empty.",
+            type(self).__name__,
+            source,
+        )
+        return []
+
+    def check(self, **kwargs):
+        """System checks: the ``source_type`` choices and ``source_fields``
+        name the same sources, and ``source_fields`` and
+        ``source_rows_urls`` only name fields and sources the block has."""
+        errors = super().check(**kwargs)
+        obj = kwargs.get("field", self)
+        name = type(self).__name__
+        sources = set(self.source_fields)
+        choice_block = self.child_blocks.get("source_type")
+        if choice_block is not None:
+            choices = set()
+            for key, label in choice_block.field.choices:
+                if isinstance(label, list | tuple):  # an option group
+                    choices.update(k for k, _label in label)
+                else:
+                    choices.add(key)
+            choices.discard("")
+            if choices != sources:
+                details = []
+                if missing := sorted(choices - sources):
+                    details.append("no source_fields for " + ", ".join(map(repr, missing)))
+                if extra := sorted(sources - choices):
+                    details.append("no source_type choice for " + ", ".join(map(repr, extra)))
+                errors.append(
+                    checks.Error(
+                        f"{name}'s source_type choices don't match its source_fields: "
+                        + "; ".join(details)
+                        + ".",
+                        hint="Give each source a source_type choice and a source_fields "
+                        "entry (an empty tuple if it has no fields).",
+                        obj=obj,
+                        id="wagtail_vega.E004",
+                    )
+                )
+        for source, names in self.source_fields.items():
+            for field_name in names:
+                if field_name not in self.child_blocks:
+                    errors.append(
+                        checks.Error(
+                            f"{name}.source_fields[{source!r}] names {field_name!r}, "
+                            f"which isn't a field of {name}.",
+                            hint="Add the field to the block, or remove it from source_fields.",
+                            obj=obj,
+                            id="wagtail_vega.E005",
+                        )
+                    )
+        for source in self.source_rows_urls:
+            if source not in sources:
+                errors.append(
+                    checks.Error(
+                        f"{name}.source_rows_urls has a URL for {source!r}, "
+                        "which isn't in its source_fields.",
+                        hint="Remove it, or add the source to source_fields.",
+                        obj=obj,
+                        id="wagtail_vega.E006",
+                    )
+                )
+        return errors
 
 
 class DatasetBlockAdapter(StructBlockAdapter):
+    """Dataset blocks in the admin (``dataset-block.js``).
+
+    The block's ``source_fields`` and its resolved ``source_rows_urls`` go to
+    the form script in ``meta["wagtailVega"]``, so a new source's fields are
+    shown and hidden, summarised and previewed with no extra script.
+
+    To load a script of your own for a ``DatasetBlock`` subclass, such as
+    one that calls ``wagtailVegaAdmin.registerSource()``, register a
+    subclass of this adapter for your block and list the script in
+    ``extra_js``, which is loaded after wagtail-vega's scripts::
+
+        class IncidentDatasetBlockAdapter(DatasetBlockAdapter):
+            extra_js = ["tracker/admin/incident-source.js"]
+
+        register(IncidentDatasetBlockAdapter(), IncidentDatasetBlock)
+    """
+
     js_constructor = "wagtail_vega.blocks.DatasetBlock"
+
+    #: Scripts (static paths or URLs) loaded after ``dataset-block.js``.
+    extra_js: tuple[str, ...] = ()
+    #: Stylesheets loaded after ``dataset-block.css``.
+    extra_css: tuple[str, ...] = ()
+
+    def js_args(self, block):
+        name, children, meta = super().js_args(block)
+        meta = {
+            **meta,
+            "wagtailVega": {
+                "sourceFields": {s: list(names) for s, names in block.source_fields.items()},
+                "rowsUrls": {
+                    s: url if url.startswith("/") else reverse(url)
+                    for s, url in block.source_rows_urls.items()
+                },
+            },
+        }
+        return [name, children, meta]
 
     @cached_property
     def media(self):
+        # One list, in order. Adding Media objects together wouldn't keep
+        # extra_js after dataset-block.js: Django's merge only keeps the
+        # relative order of scripts that are in both lists.
         media = super().media
         return forms.Media(
             js=[
@@ -332,11 +520,13 @@ class DatasetBlockAdapter(StructBlockAdapter):
                     [
                         "wagtail_vega/admin/json-source.js",
                         "wagtail_vega/admin/data-format.js",
+                        "wagtail_vega/admin/sources.js",
                         "wagtail_vega/admin/dataset-block.js",
                     ]
                 ),
+                *self.extra_js,
             ],
-            css={"all": ["wagtail_vega/admin/dataset-block.css"]},
+            css={"all": ["wagtail_vega/admin/dataset-block.css", *self.extra_css]},
         )
 
 
@@ -422,7 +612,7 @@ def _is_numeric_column(values: list[Any]) -> bool:
     )
 
 
-class BaseChartBlock(blocks.StructBlock):
+class BaseChartBlock(FieldOrderMixin, blocks.StructBlock):
     """A chart built from a Vega / Vega-Lite spec.
 
     Override the ``get_*`` hooks to customise behaviour. ``Meta`` options:
@@ -462,16 +652,6 @@ class BaseChartBlock(blocks.StructBlock):
         ssr = None
         fallback_table = None
         embed_options = None
-
-    def __init__(self, *args, **kwargs):
-        if self.field_order:
-            # StructBlock.__init__ copies base_blocks, so an instance attribute
-            # set here decides the order on all supported Wagtail versions.
-            declared = type(self).base_blocks
-            names = [n for n in self.field_order if n in declared]
-            names += [n for n in declared if n not in names]
-            self.base_blocks = collections.OrderedDict((n, declared[n]) for n in names)
-        super().__init__(*args, **kwargs)
 
     # -- hooks --------------------------------------------------------------
 

@@ -39,12 +39,14 @@
  * Data comes from the form as it is now: pasted text is parsed with
  * data-format.js (as the server will), documents through the document-rows
  * endpoint, and URL datasets are fetched by the browser, from allowed hosts
- * only. The Vega libraries load once, the first time a chart is drawn, and
+ * only. A custom source's rows come from its rows URL or the script that
+ * registered it (see sources.js); without either, the dataset is listed
+ * but can't be previewed. The Vega libraries load once, the first time a chart is drawn, and
  * draw with vega-embed's bundled vega-interpreter (ast: true), so the admin
  * needs no 'unsafe-eval'.
  *
  * All text comes from the server (builder_strings.py), looked up by key.
- * Needs data-format.js, code-editor.js and chart-spec.js.
+ * Needs data-format.js, sources.js, code-editor.js and chart-spec.js.
  */
 (() => {
   "use strict";
@@ -154,9 +156,55 @@
   }
 
   function hasData(dataset) {
+    if (dataset.source === "paste") return Boolean(dataset.paste.trim());
     if (dataset.source === "document") return Boolean(dataset.document);
     if (dataset.source === "url") return Boolean(dataset.url);
-    return Boolean(dataset.paste.trim());
+    // A custom source (see sources.js)
+    if (dataset.loader === "rowsUrl") {
+      return !Object.keys(dataset.fields).length || admin.sources.hasValues(dataset.fields);
+    }
+    if (dataset.loader === "registry") {
+      const entry = admin.sources.registeredSource(dataset.source);
+      return typeof entry?.hasData === "function" ? Boolean(entry.hasData(dataset.el)) : true;
+    }
+    // Listed, so the spec can use it, with a note that it can't be previewed
+    return true;
+  }
+
+  /** One dataset, as entered in the form now. Only the selected source's
+   * inputs are read. A custom source's dataset has its `fields`, how its
+   * rows are loaded (`loader`: "rowsUrl", "registry" or null) and, not
+   * enumerable (so not in the rows cache's key), its element `el`. */
+  function readDataset(el) {
+    const sources = admin.sources;
+    const field = (name) => el.querySelector(`[data-contentpath="${name}"]`);
+    const source = sources
+      ? sources.selectedSource(el)
+      : field("source_type")?.querySelector("input[type=radio]:checked")?.value || "paste";
+    const dataset = { name: field("name")?.querySelector("input")?.value.trim() || "", source };
+    if (source === "paste") {
+      dataset.paste = field("paste")?.querySelector("textarea")?.value || "";
+    } else if (source === "document") {
+      dataset.document = field("document")?.querySelector('input[type="hidden"]')?.value || "";
+    } else if (source === "url") {
+      dataset.url = field("url")?.querySelector("input")?.value.trim() || "";
+      dataset.format = field("format")?.querySelector("select")?.value || "";
+    } else if (!sources) {
+      dataset.loader = null;
+      dataset.label = source;
+    } else {
+      const settings = sources.sourceSettings(el);
+      const loader = sources.loaderFor(source, settings);
+      dataset.label = sources.sourceLabel(el, source);
+      dataset.fields = sources.readFields(el, settings.sourceFields[source] || []);
+      dataset.loader = loader.kind;
+      if (loader.kind === "rowsUrl") dataset.rowsUrl = loader.url;
+      if (loader.kind === "registry" && typeof loader.entry.key === "function") {
+        dataset.key = loader.entry.key(el);
+      }
+      Object.defineProperty(dataset, "el", { value: el, enumerable: false });
+    }
+    return dataset;
   }
 
   /** The chart's datasets that have data, as entered in the form now. */
@@ -164,23 +212,14 @@
     if (!dataField) return [];
     return [...dataField.querySelectorAll(".wagtail-vega-dataset")]
       .filter((el) => !isDeleted(el))
-      .map((el) => {
-        const field = (name) => el.querySelector(`[data-contentpath="${name}"]`);
-        return {
-          name: field("name")?.querySelector("input")?.value.trim() || "",
-          source: field("source_type")?.querySelector("input[type=radio]:checked")?.value || "paste",
-          paste: field("paste")?.querySelector("textarea")?.value || "",
-          document: field("document")?.querySelector('input[type="hidden"]')?.value || "",
-          url: field("url")?.querySelector("input")?.value.trim() || "",
-          format: field("format")?.querySelector("select")?.value || "",
-        };
-      })
+      .map(readDataset)
       .filter((dataset) => dataset.name && hasData(dataset));
   }
 
   async function loadRows(dataset, config) {
     const parseRows = admin.dataFormat?.parseRows;
     if (!parseRows) throw new Error(t("error.scripts"));
+    if (dataset.source === "paste") return parseRows(dataset.paste);
     if (dataset.source === "document") {
       const url = `${config.rowsUrl}?id=${encodeURIComponent(dataset.document)}`;
       const response = await fetch(url, { headers: { Accept: "application/json" } });
@@ -197,7 +236,15 @@
       if (!response.ok) throw new Error(t("error.url", { url: url.href, status: response.status }));
       return parseRows(await response.text(), dataset.format || formatFromUrl(url));
     }
-    return parseRows(dataset.paste);
+    // A custom source: its rows URL, else the script that registered it
+    const sources = admin.sources;
+    if (dataset.loader === "rowsUrl") {
+      return sources.fetchRows(sources.rowsRequestUrl(dataset.rowsUrl, dataset.fields));
+    }
+    if (dataset.loader === "registry") {
+      return sources.registeredSource(dataset.source).loadRows(dataset.el, config);
+    }
+    throw new Error(t("error.source", { name: dataset.name, source: dataset.label || dataset.source }));
   }
 
   // Rows for each dataset as entered, so redrawing doesn't fetch them again
@@ -1446,6 +1493,17 @@
 
   // Internal helpers, exposed for tests. Not a public API.
   admin.chartBuilder = {
-    _internal: { urlAllowed, formatFromUrl, deepMerge, previewSpec, sampleRows, adminScheme, t },
+    _internal: {
+      urlAllowed,
+      formatFromUrl,
+      deepMerge,
+      previewSpec,
+      sampleRows,
+      adminScheme,
+      t,
+      hasData,
+      readDataset,
+      loadRows,
+    },
   };
 })();

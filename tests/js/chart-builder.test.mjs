@@ -3,6 +3,7 @@
 // browser (tests/e2e/test_chart_builder.py).
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { checkbox, control, customDataset, radio, select, textarea, wrapper } from "./fake-dom.mjs";
 import { loadChartBuilder, plain } from "./load.mjs";
 
 const window = loadChartBuilder();
@@ -120,6 +121,148 @@ test("sampleRows keeps the first rows of large datasets, and says which", () => 
   assert.deepEqual(plain(rows.big[9]), { i: 9 });
   assert.equal(rows.small.length, 1);
   assert.deepEqual(plain(sampled), [{ name: "big", shown: 10, total: 12 }]);
+});
+
+// -- Custom dataset sources (#34) ---------------------------------------------
+
+const { hasData, readDataset, loadRows } = window.wagtailVegaAdmin.chartBuilder._internal;
+const { sources } = window.wagtailVegaAdmin;
+const config = { rowsUrl: "/admin/wagtail-vega/document-rows/", allowedHosts: [] };
+
+function stubFetch(status, body) {
+  const calls = [];
+  window.fetch = async (url, options) => {
+    calls.push({ url: String(url), options });
+    return { ok: status < 400, status, json: async () => body };
+  };
+  return calls;
+}
+
+const donations = (props = {}) =>
+  customDataset({
+    name: "donations",
+    source: "donations",
+    fields: {
+      year: [select(["", "2025", "2026"], ["2026"])],
+      group_by: [checkbox("quarter", true), checkbox("month", true)],
+    },
+    sourceFields: { donations: ["year", "group_by"] },
+    rowsUrls: { donations: "/admin/donation-rows/" },
+    ...props,
+  });
+
+test("fieldValues reads inputs, selects, checkboxes, radios and textareas", () => {
+  assert.deepEqual(plain(sources.fieldValues(wrapper([control({ value: "x" })]))), ["x"]);
+  assert.deepEqual(plain(sources.fieldValues(wrapper([textarea("t")]))), ["t"]);
+  assert.deepEqual(plain(sources.fieldValues(wrapper([select(["a", "b", "c"], ["a", "c"], true)]))), ["a", "c"]);
+  assert.deepEqual(plain(sources.fieldValues(wrapper([checkbox("a", true), checkbox("b"), checkbox("c", true)]))), ["a", "c"]);
+  assert.deepEqual(plain(sources.fieldValues(wrapper([radio("a"), radio("b", true)]))), ["b"]);
+  // Unnamed, disabled and button-like controls aren't values
+  const skipped = [control({ name: "", value: "x" }), control({ disabled: true, value: "y" }), control({ type: "button", value: "z" })];
+  assert.deepEqual(plain(sources.fieldValues(wrapper(skipped))), []);
+  assert.deepEqual(plain(sources.fieldValues(null)), []);
+});
+
+test("rowsRequestUrl sends the fields as query parameters, on this site only", () => {
+  const url = sources.rowsRequestUrl("/admin/rows/?v=1", { year: ["2026"], group_by: ["quarter", "month"], empty: [] });
+  assert.equal(url.href, "https://site.test/admin/rows/?v=1&year=2026&group_by=quarter&group_by=month");
+  assert.throws(() => sources.rowsRequestUrl("https://evil.test/rows/", {}), /can't be loaded from/);
+});
+
+test("loaderFor: built-in, then rows URL, then the registry, else none", () => {
+  const settings = { rowsUrls: { a: "/rows/a/", paste: "/never/" } };
+  assert.equal(sources.loaderFor("paste", settings).kind, "builtIn");
+  assert.deepEqual(plain(sources.loaderFor("a", settings)), { kind: "rowsUrl", url: "/rows/a/" });
+  sources.registerSource("loader-test", { loadRows: () => [] });
+  assert.equal(sources.loaderFor("loader-test", settings).kind, "registry");
+  assert.equal(sources.loaderFor("other", settings).kind, null);
+});
+
+test("registerSource needs a name and loadRows()", () => {
+  assert.equal(window.wagtailVegaAdmin.registerSource, sources.registerSource);
+  assert.throws(() => sources.registerSource("", { loadRows() {} }), { name: "TypeError" });
+  assert.throws(() => sources.registerSource("x", {}), { name: "TypeError" });
+});
+
+test("readDataset reads only the selected source's inputs", () => {
+  const dataset = readDataset(donations());
+  assert.deepEqual(plain(dataset), {
+    name: "donations",
+    source: "donations",
+    label: "Donations",
+    fields: { year: ["2026"], group_by: ["quarter", "month"] },
+    loader: "rowsUrl",
+    rowsUrl: "/admin/donation-rows/",
+  });
+  assert.equal("paste" in dataset, false); // never the paste field's text
+  assert.ok(dataset.el); // for registered sources, but not in the cache key
+  assert.equal(Object.keys(dataset).includes("el"), false);
+
+  const pasted = readDataset(donations({ source: "paste" }));
+  assert.deepEqual(plain(pasted), { name: "donations", source: "paste", paste: "a\n1" });
+});
+
+test("hasData for custom sources", () => {
+  assert.equal(hasData(readDataset(donations())), true);
+  const blank = donations({ fields: { year: [select(["", "2026"], [""])], group_by: [checkbox("quarter")] } });
+  assert.equal(hasData(readDataset(blank)), false);
+  // A source that can't be previewed is still listed (with a note)
+  const other = customDataset({ source: "totals", sourceFields: { totals: [] } });
+  assert.equal(hasData(readDataset(other)), true);
+});
+
+test("loadRows fetches a rows URL with the fields", async () => {
+  const calls = stubFetch(200, { rows: [{ quarter: "Q1", total: 1.5 }] });
+  const rows = await loadRows(readDataset(donations()), config);
+  assert.deepEqual(plain(rows), [{ quarter: "Q1", total: 1.5 }]);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://site.test/admin/donation-rows/?year=2026&group_by=quarter&group_by=month");
+  assert.equal(calls[0].options.credentials, "same-origin");
+});
+
+test("loadRows shows a rows URL's error", async () => {
+  stubFetch(400, { error: "There are no donations in 2025." });
+  await assert.rejects(loadRows(readDataset(donations()), config), { message: "There are no donations in 2025." });
+  stubFetch(500, null);
+  await assert.rejects(loadRows(readDataset(donations()), config), { message: "Couldn't load the data (500)." });
+});
+
+test("loadRows uses a registered source", async () => {
+  let seen = null;
+  sources.registerSource("sample", {
+    hasData: (el) => sources.readFields(el, ["points"]).points[0] !== "0",
+    loadRows: async (el, cfg) => {
+      seen = { el, cfg };
+      return [{ x: 1 }];
+    },
+  });
+  const el = customDataset({
+    source: "sample",
+    fields: { points: [control({ name: "points", value: "3" })] },
+    sourceFields: { sample: ["points"] },
+  });
+  const dataset = readDataset(el);
+  assert.equal(dataset.loader, "registry");
+  assert.deepEqual(plain(dataset.fields), { points: ["3"] });
+  assert.equal(hasData(dataset), true);
+  assert.deepEqual(plain(await loadRows(dataset, config)), [{ x: 1 }]);
+  assert.equal(seen.el, el);
+  assert.equal(seen.cfg, config);
+
+  const none = customDataset({
+    source: "sample",
+    fields: { points: [control({ name: "points", value: "0" })] },
+    sourceFields: { sample: ["points"] },
+  });
+  assert.equal(hasData(readDataset(none)), false);
+});
+
+test("loadRows can't preview a source with neither, and doesn't read the paste field", async () => {
+  const calls = stubFetch(200, { rows: [] });
+  const dataset = readDataset(customDataset({ name: "totals", source: "totals", sourceFields: { totals: [] } }));
+  assert.equal(dataset.loader, null);
+  await assert.rejects(loadRows(dataset, config), { message: "error.source" });
+  assert.equal(calls.length, 0);
 });
 
 test("t fills in placeholders", () => {
