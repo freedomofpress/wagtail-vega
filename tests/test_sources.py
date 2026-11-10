@@ -443,3 +443,25 @@ def test_default_source_is_paste():
     block = DatasetBlock()
     assert block.get_source({"source_type": ""}) == PASTE
     assert block.get_source({"source_type": "url"}) == "url"
+
+
+def test_source_rows_view_checks_admin_access_wherever_it_is_routed(rf, django_user_model, db):
+    """Even outside register_admin_urls (which also wraps it), the view
+    refuses users without admin access."""
+    from django.contrib.auth.models import AnonymousUser
+    from django.contrib.messages.storage.fallback import FallbackStorage
+
+    from tests.testapp.views import DonationRowsView
+
+    def get(user):
+        request = rf.get("/rows/", {"year": "2026"})
+        request.user = user
+        request.session = {}
+        request._messages = FallbackStorage(request)  # the check adds a message
+        return DonationRowsView.as_view()(request)
+
+    assert get(AnonymousUser()).status_code in (302, 403)
+    reader = django_user_model.objects.create_user("reader", password="x")
+    response = get(reader)
+    assert response.status_code in (302, 403)
+    assert b'"rows"' not in response.content
