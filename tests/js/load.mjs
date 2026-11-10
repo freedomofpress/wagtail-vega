@@ -101,6 +101,12 @@ export function loadChartBuilder() {
 // deepStrictEqual treats as different. Round-trip through JSON to compare.
 export const plain = (value) => JSON.parse(JSON.stringify(value));
 
+/** Voyager's spec conversion and write rules, and its iframe's messenger
+ * (with `extra` globals, e.g. a fake document). */
+export function loadVoyager(extra = {}) {
+  return loadScript(["admin/voyager-spec.js", "admin/voyager-editor.js"], { console, ...extra });
+}
+
 /** The chart block's admin script (labels and the dataset name check). */
 export function loadChartBlock() {
   const registered = {};

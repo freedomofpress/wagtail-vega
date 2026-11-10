@@ -7,7 +7,7 @@ Theme names used by chart blocks (``Meta.theme``) are checked by
 from django.core import checks
 from django.core.exceptions import ImproperlyConfigured
 
-from .conf import get_setting
+from .conf import VISUAL_EDITORS, get_setting
 from .themes import build_theme
 
 
@@ -34,3 +34,17 @@ def check_themes(app_configs=None, **kwargs):
             )
         )
     return errors
+
+
+@checks.register()
+def check_visual_editor(app_configs=None, **kwargs):
+    value = get_setting("VISUAL_EDITOR")
+    if value in VISUAL_EDITORS:
+        return []
+    return [
+        checks.Error(
+            f"WAGTAIL_VEGA VISUAL_EDITOR {value!r} isn't one of: {', '.join(VISUAL_EDITORS)}.",
+            hint='Use "voyager" (the default) or "simple".',
+            id="wagtail_vega.E003",
+        )
+    ]

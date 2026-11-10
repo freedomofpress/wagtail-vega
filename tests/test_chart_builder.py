@@ -15,7 +15,7 @@ from unittest.mock import patch
 import pytest
 from django.contrib.auth.models import Group, Permission
 from django.core.files.base import ContentFile
-from django.urls import NoReverseMatch, reverse
+from django.urls import reverse
 from wagtail.documents import get_document_model
 
 from wagtail_vega.blocks import SpecBlock
@@ -150,15 +150,6 @@ def test_document_rows_is_get_only(admin_client, doc):
     assert admin_client.post(ROWS, {"id": doc.pk}).status_code == 405
 
 
-def test_voyager_is_gone():
-    """Voyager's page and files were removed with the builder that replaced it."""
-    with pytest.raises(NoReverseMatch):
-        reverse("wagtail_vega_voyager")
-    static = Path(__file__).parent.parent / "wagtail_vega" / "static" / "wagtail_vega"
-    assert not (static / "vendor" / "voyager").exists()
-    assert not list(static.rglob("voyager*"))
-
-
 # -- The button ----------------------------------------------------------------------
 
 
@@ -266,11 +257,16 @@ ADMIN_STATIC = Path(__file__).parent.parent / "wagtail_vega" / "static" / "wagta
 
 
 def js_keys():
-    """Every string key chart-builder.js and chart-spec.js look up."""
+    """Every string key chart-builder.js, chart-spec.js and voyager-spec.js
+    look up."""
     builder = (ADMIN_STATIC / "chart-builder.js").read_text()
     spec = (ADMIN_STATIC / "chart-spec.js").read_text()
+    voyager = (ADMIN_STATIC / "voyager-spec.js").read_text()
     keys = set(re.findall(r'\bt\("([\w.]+)"', builder))
     keys |= set(re.findall(r'key: "([\w.]+)"', spec))
+    keys |= set(re.findall(r'key: "([\w.]+)"', voyager))
+    keys |= set(re.findall(r'\badd\("(voyager\.[\w.]+)"', voyager))
+    keys |= {f"voyager.lost.{k}" for k in ("params", "transform", "data")}
     keys |= {f"suggest.{k}" for k in re.findall(r'\badd\("(\w+)"', spec)}
 
     def values(name):

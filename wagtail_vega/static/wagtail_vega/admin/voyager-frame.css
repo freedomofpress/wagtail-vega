@@ -1,0 +1,24 @@
+/* The Voyager page inside the admin's lightbox iframe. */
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: #fff;
+}
+.wagtail-vega-voyager-app {
+  height: 100%;
+}
+.wagtail-vega-voyager-error {
+  margin: 2rem;
+  font: 1rem/1.5 system-ui, sans-serif;
+  color: #b00020;
+}
+
+/* Data comes from the chart's datasets, so hide Voyager's own data loader
+   ("Change") and its footer. Its showDataSourceSelector/hideFooter options
+   are lost when a spec is opened with setSpec(), hence CSS. The class names
+   are from datavoyager 2.0.0-alpha.24; check them when updating it. */
+.data-selector__data-selector,
+.footer__footer {
+  display: none !important;
+}

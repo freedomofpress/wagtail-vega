@@ -492,3 +492,150 @@ html.wagtail-vega-builder-open {
 .wagtail-vega-builder__actions .button[disabled] {
   opacity: 0.6;
 }
+
+/* The Visual tab's modes, Voyager or Simple: a segmented control, like the
+   dataset source toggle */
+.wagtail-vega-builder__modes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.wagtail-vega-builder__modes > legend {
+  float: left; /* beside the options, in a fieldset */
+  margin: 0;
+  padding: 0;
+  font-weight: 600;
+  color: var(--w-color-text-label, inherit);
+}
+.wagtail-vega-builder__modes > .wagtail-vega-builder__hint {
+  flex-basis: 100%;
+  margin: 0;
+}
+.wagtail-vega-builder__mode-options {
+  display: inline-flex;
+  border: 1px solid var(--w-color-border-field-default, #ccc);
+  border-radius: 0.3125rem;
+  overflow: hidden;
+  background: var(--w-color-surface-field, transparent);
+}
+.wagtail-vega-builder__mode-options input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.wagtail-vega-builder__mode-options label {
+  margin: 0;
+  padding: 0.375rem 1rem;
+  font-weight: 600;
+  color: var(--w-color-text-label, inherit);
+  cursor: pointer;
+}
+.wagtail-vega-builder__mode-options label + input + label {
+  border-inline-start: 1px solid var(--w-color-border-field-default, #ccc);
+}
+.wagtail-vega-builder__mode-options label:hover {
+  background: var(--w-color-surface-field-inactive, rgba(127, 127, 127, 0.12));
+}
+.wagtail-vega-builder__mode-options input:checked + label {
+  color: var(--w-color-text-button, #fff);
+  background: var(--w-color-surface-button-default, #007d7e);
+}
+.wagtail-vega-builder__mode-options input:focus-visible + label {
+  outline: 3px solid var(--w-color-focus, #ffbf47);
+  outline-offset: -3px;
+}
+
+/* Voyager: the whole width of the dialog (the preview is hidden, as Voyager
+   draws its own chart), and the rest of the panel's height */
+.wagtail-vega-builder.is-voyager .wagtail-vega-builder__body {
+  grid-template-columns: minmax(0, 1fr);
+}
+.wagtail-vega-builder.is-voyager .wagtail-vega-builder__preview {
+  display: none;
+}
+.wagtail-vega-builder.is-voyager .wagtail-vega-builder__panes {
+  border-inline-end: 0;
+}
+.wagtail-vega-builder.is-voyager .wagtail-vega-builder__panel--visual {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 0.75rem;
+}
+.wagtail-vega-builder__voyager {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+}
+.wagtail-vega-builder__voyager > * {
+  margin: 0;
+}
+.wagtail-vega-builder__voyager-mouse,
+.wagtail-vega-builder__voyager-status {
+  font-size: 0.875rem;
+  color: var(--w-color-text-meta, inherit);
+}
+.wagtail-vega-builder__voyager-mouse .button {
+  margin-inline-start: 0.5rem;
+  vertical-align: baseline;
+}
+.wagtail-vega-builder__voyager-status:empty {
+  display: none;
+}
+.wagtail-vega-builder__voyager .wagtail-vega-builder__notice {
+  margin: 0;
+}
+.wagtail-vega-builder__notice.is-warning {
+  border-inline-start-color: var(--w-color-warning-100, #faa500);
+}
+.wagtail-vega-builder__notice ul {
+  margin: 0.25rem 0;
+  padding-inline-start: 1.25rem;
+}
+.wagtail-vega-builder__notice p + p {
+  margin-top: 0.25rem;
+}
+/* Voyager has no dark theme: it stays light, inside the admin's own colours */
+.wagtail-vega-builder__voyager-host {
+  flex: 1;
+  min-height: 32rem;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--w-color-border-furniture, #e0e0e0);
+  border-radius: 0.3125rem;
+}
+.wagtail-vega-builder__voyager-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 32rem;
+  border: 0;
+}
+.wagtail-vega-builder__voyager-problems {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  border-inline-start: 4px solid var(--w-color-text-error, #cd4444);
+  background: var(--w-color-surface-field-inactive, rgb(0 0 0 / 0.04));
+  border-radius: 0.3125rem;
+}
+.wagtail-vega-builder__voyager-problems p {
+  margin: 0 0 0.25rem;
+  font-weight: 600;
+}
+.wagtail-vega-builder__voyager-problems ul {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+  color: var(--w-color-text-error, #cd4444);
+}
+@media (max-width: 50em) {
+  .wagtail-vega-builder__voyager-host,
+  .wagtail-vega-builder__voyager-frame {
+    min-height: 70vh;
+  }
+}

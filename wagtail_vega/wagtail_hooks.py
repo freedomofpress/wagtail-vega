@@ -24,6 +24,8 @@ def register_admin_urls():
             JavaScriptCatalog.as_view(packages=["wagtail_vega"]),
             name="wagtail_vega_jsi18n",
         ),
+        # Vega Voyager's sandboxed page, for the chart editor
+        path("wagtail-vega/voyager/", views.voyager, name="wagtail_vega_voyager"),
         path(
             "wagtail-vega/document-rows/",
             views.document_rows,

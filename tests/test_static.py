@@ -24,6 +24,8 @@ def test_collectstatic_with_manifest_storage(settings, tmp_path):
     ]
     assert "wagtail_vega/vendor/vega-lite.min.js" in shipped
     assert "wagtail_vega/admin/chart-builder.js" in shipped
+    assert "wagtail_vega/vendor/voyager/voyager.js" in shipped
+    assert "wagtail_vega/vendor/voyager/voyager.css" in shipped
     for name in shipped:
         hashed = staticfiles_storage.stored_name(name)
         assert hashed != name, name

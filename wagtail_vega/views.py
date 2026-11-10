@@ -1,13 +1,17 @@
 """Admin views."""
 
 import json
+from urllib.parse import urlsplit
 
 from django.core.exceptions import ValidationError
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404
+from django.template.response import TemplateResponse
+from django.templatetags.static import static
 from django.utils.decorators import method_decorator
 from django.utils.translation import gettext as _
 from django.views import View
+from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.http import require_GET, require_POST
 from wagtail.admin.auth import require_admin_access
 from wagtail.documents import get_document_model
@@ -36,6 +40,75 @@ def validate_spec(request):
         )
     errors = [{"path": list(p.path), "message": p.message} for p in spec_problems(spec)]
     return JsonResponse({"errors": errors})
+
+
+# -- Vega Voyager (the chart editor's "Voyager" mode) -------------------------
+
+# The Voyager page runs old third-party code (React 15, vega 4). Sandboxing
+# it without allow-same-origin gives it an opaque origin: it can't read the
+# admin's cookies or DOM, or make credentialed requests the admin trusts. The
+# iframe has the same sandbox attribute; the header also covers the page
+# being opened on its own.
+#
+# The rest of the policy keeps that code from reaching the network: the admin
+# page loads the data and passes it in with postMessage, so the frame needs
+# no connections, forms or plugins. Scripts, styles, images and fonts may only
+# come from our static files, on whatever origin they're served from (vega 4
+# and Voyager need eval and inline styles).
+
+VOYAGER_JS = "wagtail_vega/vendor/voyager/voyager.js"
+
+
+def static_origin() -> str:
+    """The CSP source for the static files: 'self', or their origin when
+    they're served from another one (a CDN, with an absolute STATIC_URL)."""
+    parts = urlsplit(static(VOYAGER_JS))
+    if parts.scheme and parts.netloc:
+        return f"{parts.scheme}://{parts.netloc}"
+    return "'self'"
+
+
+def frame_csp() -> str:
+    """The Content-Security-Policy of the Voyager page."""
+    origin = static_origin()
+    return "; ".join(
+        [
+            "sandbox allow-scripts",
+            "default-src 'none'",
+            f"script-src {origin} 'unsafe-eval'",
+            f"style-src {origin} 'unsafe-inline'",
+            f"img-src {origin} data: blob:",
+            f"font-src {origin} data:",
+            "connect-src 'none'",
+            "base-uri 'none'",
+            "form-action 'none'",
+            "frame-ancestors 'self'",
+        ]
+    )
+
+
+def voyager_frame_strings() -> dict[str, str]:
+    """The Voyager page's own text (voyager-frame.js)."""
+    return {
+        "notLoaded": _("Voyager didn't load."),
+        "notStarted": _("Voyager couldn't start: %(error)s"),
+        "noData": _("No data was sent to Voyager."),
+    }
+
+
+@require_admin_access
+@require_GET
+@xframe_options_sameorigin
+def voyager(request):
+    """The page Voyager runs in, inside the chart editor's sandboxed iframe.
+    Admin users only."""
+    response = TemplateResponse(
+        request,
+        "wagtail_vega/admin/voyager.html",
+        {"strings": json.dumps(voyager_frame_strings())},
+    )
+    response["Content-Security-Policy"] = frame_csp()
+    return response
 
 
 def document_permissions():
