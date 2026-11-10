@@ -22,6 +22,7 @@ WAGTAIL_VEGA = {
     "FALLBACK_TABLE_MAX_ROWS": 100,
     "VALIDATE_SCHEMA": True,
     "EMBED_OPTIONS": {"actions": False, "renderer": "svg"},
+    "VISUAL_EDITOR": "voyager",
 }
 ```
 
@@ -86,3 +87,9 @@ Validate specs against the bundled Vega and Vega-Lite JSON schemas when pages ar
 Default: `{"actions": False, "renderer": "svg"}`
 
 Options for [vega-embed](https://github.com/vega/vega-embed#options), merged over the default. Blocks can add to them with their `embed_options` option. wagtail-vega always sets `defaultStyle` and `loader`, adds `disableDefaultStyle` to tooltip options, and sets `theme`, `ast` and `expr` when needed. See [](frontend.md#vega-embed-options).
+
+## `VISUAL_EDITOR`
+
+Default: `"voyager"`
+
+The mode the chart editor's **Visual** tab opens in: `"voyager"` for [Vega Voyager](https://github.com/vega/voyager), or `"simple"` for wagtail-vega's own settings, which work with the keyboard and screen readers. Editors can switch between them, and their browser remembers the mode they chose last, which wins over this setting. On narrow screens, the editor opens in Simple. `manage.py check` reports other values (`wagtail_vega.E003`), which mean `"voyager"`. See {ref}`chart-editor`.

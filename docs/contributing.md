@@ -26,15 +26,18 @@ $ .venv/bin/ruff check . && .venv/bin/ruff format --check .
 | `tests/test_admin.py` | Creating, validating and previewing chart pages through the Wagtail admin. |
 | `tests/test_editor.py` | The code editor widget and its telepath adapters, and the live validation endpoint. |
 | `tests/test_chart_builder.py` | The spec field's markup and the chart editor's settings, the document-rows endpoint (permissions, parsing), and that the specs the builder writes pass validation. |
+| `tests/test_voyager.py` | The Voyager page (admin only, its CSP, with static files on another origin too), the `VISUAL_EDITOR` setting, the widget's settings for Voyager, and that converted Voyager specs pass validation. |
 | `tests/test_static.py` | `collectstatic` with `ManifestStaticFilesStorage`, which fails on dangling source-map references. |
-| `tests/e2e/` | Playwright browser tests: the dataset editor, the code editors, the spec field and chart editor (each common chart built with the keyboard only, saved and rendered; autosave; invalid JSON), and chart rendering with themes, dark mode, a strict CSP, no JavaScript and URL blocking. Marked `e2e`. |
-| `tests/js/` | Unit tests for the browser scripts: data parsing and type detection, JSON error locations and JSON path mapping, the chart builder's specs (every common chart, and opening existing specs without losing anything; the cases are in `tests/js/fixtures/chart-specs.json`, which the Python tests also validate), and security helpers. They use `node:test` and need Node 20 or newer, but no npm packages. |
+| `tests/e2e/` | Playwright browser tests: the dataset editor, the code editors, the spec field and chart editor (each common chart built with the keyboard only, saved and rendered; autosave; invalid JSON), Voyager in the chart editor (`test_voyager.py`), and chart rendering with themes, dark mode, a strict CSP, no JavaScript and URL blocking. Marked `e2e`. |
+| `tests/js/` | Unit tests for the browser scripts: data parsing and type detection, JSON error locations and JSON path mapping, the chart builder's specs (every common chart, and opening existing specs without losing anything; the cases are in `tests/js/fixtures/chart-specs.json`, which the Python tests also validate), Voyager's spec conversion, what it would lose and when its changes are written (`voyager-spec.test.mjs`), and security helpers. They use `node:test` and need Node 20 or newer, but no npm packages. |
 
 To skip the browser tests, run `pytest -m "not e2e"`. The SSR tests are skipped if vl-convert isn't installed.
 
 Each browser test fails after 120 seconds ([pytest-timeout](https://pypi.org/project/pytest-timeout/), set in `tests/e2e/conftest.py`), so a test that hangs fails with its name rather than stalling the run. A test can set its own limit with `@pytest.mark.timeout(seconds)`. Run the browser tests with `-v` to see each test's name as it runs.
 
-The browser tests run against Django's live server. With the in-memory SQLite database that CI uses, its threads share one database connection, so the test project's `SerialRequestsMiddleware` handles one request at a time, and tests that read the database while the page may still be making requests hold `tests.testapp.middleware.DATABASE_LOCK`. Wagtail's autosave is off in browser tests (`WAGTAIL_AUTOSAVE_INTERVAL = 0`) except in the tests for it.
+The browser tests run against Django's live server. With the in-memory SQLite database that CI uses, its threads share one database connection, so the test project's `SerialRequestsMiddleware` handles one request at a time, and tests that read the database while the page may still be making requests hold `tests.testapp.middleware.DATABASE_LOCK`. Wagtail's autosave is off in browser tests (`WAGTAIL_AUTOSAVE_INTERVAL = 0`) except in the tests for it. The chart editor opens in Simple mode (`VISUAL_EDITOR = "simple"`), except in `test_voyager.py`.
+
+Voyager is slow to start and reports changes asynchronously, so its browser tests wait for what they need rather than for a time: for fields to land on Voyager's shelves (adding one at a time, since Voyager drops a double-click that arrives while it's handling the last), for the charts Voyager reports to the admin page, and for the field's value. Run them a few times in a row before pushing a change to them.
 
 ### The test matrix
 
@@ -108,6 +111,16 @@ $ npm run vendor
 vega-embed bundles vega-interpreter, which CSP-safe mode and the chart builder's preview use, so it isn't vendored separately.
 
 Source-map comments are stripped from every vendored script, because `ManifestStaticFilesStorage` fails on references to maps that aren't vendored. The admin's chart builder previews charts with the same files, so check it in the sandbox too.
+
+### Vega Voyager
+
+The script also assembles Vega Voyager (the chart editor's Voyager mode) and its old dependencies into `vendor/voyager/`: one `voyager.js` with every script in load order, one `voyager.css` with Voyager's styles and its icon font inlined as a `data:` URI, and `LICENSES.txt`. The output is byte-identical to what the Python script that vendored Voyager before (`scripts/vendor.py`) wrote.
+
+- `datavoyager@2.0.0-alpha.24` (its last release, 2018) and the builds it needs are pinned exactly in `package.json`: React 15, Redux 3, react-dnd 2, vega 4, vega-lite 2, vega-tooltip 0.4 and others. The old vega packages are installed under aliases (`voyager-vega`, `voyager-vega-lite`, `voyager-vega-tooltip`), next to the vega 6 that charts use.
+- They're frozen: `.github/dependabot.yml` ignores them. Their peer dependency ranges conflict (they're never run together by npm, only copied), so `.npmrc` sets `legacy-peer-deps`. npm reports security advisories for some of these old packages and their dependencies; they only run in Voyager's sandboxed, network-less iframe (see {ref}`voyager-security`).
+- A few published builds need small fixes, applied as exact-text patches (`PATCHES` in `vendorVoyager()`), which stop the script if they don't match exactly once: react-tether's missing `prop-types`, react-css-modules' CommonJS build (wrapped into a classic script with its two small dependencies), and Voyager's debug logger, which was published switched on.
+
+`npm run build` reproduces it, and CI's check covers it. After changing anything here, check Voyager in the sandbox.
 
 ### CodeMirror
 

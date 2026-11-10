@@ -17,7 +17,7 @@ When a chart block is collapsed, its header shows the spec's `title`, or else it
 For common charts, the quickest way is:
 
 1. Copy the data from a spreadsheet and paste it into the dataset.
-2. Choose **Edit chart**, and pick the chart type and fields in the [chart editor](#chart-editor)'s **Visual** tab.
+2. Choose **Edit chart**. In the [chart editor](#chart-editor)'s **Visual** tab, drag the columns onto Voyager's shelves, or, in **Simple**, pick the chart type and fields.
 3. Close the editor. The field shows the chart.
 
 For anything the settings don't make, a typical workflow is:
@@ -119,12 +119,20 @@ The field's `<textarea>` is still in the form, hidden. It holds the spec that's 
 
 ## The chart editor
 
-**Edit chart** opens the chart editor in a lightbox. It has two tabs, **Visual** and **Code**, and a live **Preview** next to them (below them on narrow screens). All three work on the same spec:
+**Edit chart** opens the chart editor in a lightbox. It has two tabs, **Visual** and **Code**, and a live **Preview** next to them (below them on narrow screens). All of them work on the same spec:
 
-- A change in the **Visual** settings rewrites the spec in the **Code** tab, and redraws the preview.
-- An edit in the **Code** tab updates the settings and the preview.
+- A change in the **Visual** tab rewrites the spec in the **Code** tab, and redraws the preview.
+- An edit in the **Code** tab updates the **Visual** tab and the preview.
 
-**Visual** is the tab shown first. No JSON is needed to make a chart there, and everything works with the keyboard.
+**Visual** is the tab shown first. No JSON is needed to make a chart there. It has two modes, chosen with the **Visual editor** switch at its top:
+
+[Voyager](#voyager)
+: [Vega Voyager](https://github.com/vega/voyager): drag the data's columns onto shelves for the axes, colour, size, facets and so on, and browse related views of the data. It's the default. It needs a mouse or touchpad, and says so, with a button to switch to Simple.
+
+[Simple](#simple)
+: wagtail-vega's own settings: menus and fields for the chart type and encodings, with suggested charts. Everything works with the keyboard and screen readers.
+
+The site sets which mode the editor opens in, with the [`VISUAL_EDITOR`](settings.md#visual_editor) setting. Once an editor picks a mode, their browser remembers it for next time. On narrow screens, such as phones, where Voyager doesn't fit, the editor opens in Simple, and says why; Voyager can still be chosen.
 
 The editor's text is translated with the rest of wagtail-vega: it comes from the server (`wagtail_vega/builder_strings.py`), in the admin user's language.
 
@@ -144,7 +152,35 @@ Opening changes nothing
 Invalid JSON
 : While the code isn't valid JSON, the settings and the preview stay at the last valid spec, and say why. The text is still written to the field, so nothing is lost. Wagtail's autosave refuses to save a form with errors and its indicator says so ("There are validation errors, click save to highlight them."); it saves again once the spec is fixed. Saving the page with invalid JSON shows the usual error, and keeps the text.
 
-### Visual
+(voyager)=
+
+### Visual: Voyager
+
+Voyager shows the chart's data in its **Data** panel, and the chart in **Specified View**, with **Related Views** of the same data under it. Double-click a field, or drag it onto a shelf (**x**, **y**, **color**, **size**, **row**, **column**…), and pick the **Mark**. Voyager's **Undo** and **Redo** buttons undo its own changes. While Voyager is shown, the dialog's own preview is hidden, to give it the room: Voyager draws the chart itself, and the field and the other tabs show it with the chart's theme.
+
+Data
+: The same as the settings: see [Simple](#simple). The **Dataset** menu picks one of several datasets, for Voyager and the settings alike. Voyager's own data loader is hidden: its data always comes from the chart. If a dataset can't be shown, for example a custom source that can't be previewed in the admin, Voyager says so. Datasets with more than 5,000 rows are shown from their first 5,000 rows, and Voyager says so; the chart on the page uses them all.
+
+Writing the chart
+: Voyager speaks an old version of Vega-Lite (2). Its chart is converted to a Vega-Lite v6 spec that loads the dataset by name (`"data": {"name": "source"}`, never a copy of the data), and goes into the field like any other change, shortly after each change in Voyager. The chart's title, description, width, height and `config` are kept from the spec it replaces. The spec is checked as the code is, and any problems are listed under Voyager; it's in the page regardless, as in the rest of the editor.
+
+Opening changes nothing
+: When Voyager opens a chart, it reports the chart back as it shows it, which isn't always exactly the spec (see below). That isn't a change: only a chart that differs, after the editor has done something in Voyager, is written. Undoing everything in Voyager puts back the spec exactly as it was. While Voyager shows no single chart (empty shelves, or wildcard fields that make several), the field keeps the last one.
+
+Charts Voyager can't show as they are
+: Voyager makes one view at a time, without the newer parts of Vega-Lite. Before it opens the field's chart, the editor works out what Voyager would leave out, and lists it above Voyager, for example **grouped bars: Voyager shows them stacked**, **its parameters and selections (params)**, **its calculations and filters (transform)**, or settings such as `mark.tooltip` and `encoding.x.axis`. Once Voyager has opened the chart, anything else it changed is added to the list. Opening it this way changes nothing; but if the editor goes ahead and changes the chart in Voyager, the page gets Voyager's version, without those parts. To keep them, use **Simple** or **Code**.
+
+Charts Voyager can't open
+: A Vega spec, layers, concatenated, repeated or faceted views, or a mark Voyager doesn't have (such as `arc`, for pies) aren't opened in Voyager. It says why, and offers **Simple**, **Code**, or **Start a new chart in Voyager**, which starts from the data; the chart made there replaces the spec once the editor makes one.
+
+Keeping up with the other tabs
+: When the spec changes in **Simple** or **Code**, or with **Undo changes since opening**, Voyager opens it again the next time it's shown. Its last change is written before the editor closes (with **Close**, the close button or Esc, which also works inside Voyager), and before the editor switches tab or mode.
+
+Voyager has no dark mode: it stays light inside the dark admin.
+
+(simple)=
+
+### Visual: Simple
 
 Data
 : The settings get the data from the form as it is now, whether or not the page has been saved. Pasted data is read exactly as it will be for the chart, documents are read on the server, and URL datasets are fetched by the browser, from allowed hosts only. If the chart has several datasets, a **Dataset** menu picks one. Datasets with no data yet are left out. Datasets a developer adds in code (`ChartBlock.extra_dataset_names`) are listed but can't be chosen, because the admin has no rows for them; a chart that uses one opens with the first dataset from the form, and says so.
@@ -177,15 +213,18 @@ If the field already holds a chart, the editor opens it, so editors can change i
 
 - A single-view Vega-Lite chart opens in the settings with its chart type, fields and settings. **Anything the settings don't edit is kept as it is**: for example `config`, `transform`, `params`, a mark's `cornerRadius`, an axis `format`, a legend's position, or a `tooltip` channel. The editor lists these under **From the current spec**. A setting the editor can show but not in that form, such as a custom sort order, shows as **Custom** in its menu, and is kept until the editor picks something else.
 - Settings kept for a field belong to that field: if the editor changes the X axis to another field, the old field's axis settings are removed, and the editor lists them under **Your changes remove these parts of the spec**. Changing back brings them back. Settings for a mark type work the same way.
+- In Voyager, the chart opens as Voyager can show it, with a list of anything it would leave out (see [Voyager](#voyager)).
 - Anything else, such as a Vega spec, layers, concatenated or repeated views, a mark type the settings don't offer, or data loaded from a URL in the spec, can't be shown in the settings. The **Visual** tab says why, and offers to **Start a new chart** from the data instead; the **Code** tab and the preview keep working. The spec only changes if the editor edits the code or starts a new chart.
 
 On charts whose data comes from code ({py:class}`~wagtail_vega.blocks.BaseChartBlock` subclasses without a `data` field), the settings aren't available, because there's no data in the form to build from: the spec is edited in the **Code** tab. Developers can leave the chart editor out, and show the code editor inline, with `SpecBlock(builder=False)`.
 
 ### Keyboard and screen readers
 
-The editor is a modal dialog: focus moves into it when it opens, Tab and Shift+Tab move through its controls in order, and Esc closes it. The **Visual** and **Code** tabs are a tab list: the arrow keys, Home and End move between them. Every setting is a labelled native form control (menus, checkboxes, text and number fields, and buttons), and each encoding is a labelled group. Status messages, such as "Swapped the X and Y axes.", are announced. The preview is an SVG with Vega-Lite's own description of the chart.
+The editor is a modal dialog: focus moves into it when it opens, Tab and Shift+Tab move through its controls in order, and Esc closes it. The **Visual** and **Code** tabs are a tab list: the arrow keys, Home and End move between them. The **Visual editor** switch is a group of two radio buttons, **Voyager** and **Simple**. Voyager can't be used with the keyboard alone or with a screen reader: it says so, and its **Switch to Simple** button moves to the Simple mode, whose settings can. In Simple, every setting is a labelled native form control (menus, checkboxes, text and number fields, and buttons), and each encoding is a labelled group. Status messages, such as "Swapped the X and Y axes.", are announced. The preview is an SVG with Vega-Lite's own description of the chart.
 
 :::{admonition} Limitations
+Voyager (its last release is from 2018) makes one Vega-Lite 2 view at a time, needs a mouse, and has no dark mode. Editing a chart in it drops what it can't show, which the editor lists first.
+
 The settings make one view at a time: a single mark with its encodings and facets. Layers, concatenated views, selections and transforms are written in the code (and kept when the chart is opened again). A theme set in a block's `Meta.theme` isn't shown in the previews, which use the **Theme** field or the site default. The whole dataset is still downloaded to read its columns.
 :::
 
