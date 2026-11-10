@@ -61,6 +61,79 @@ def builder_strings() -> dict[str, str]:
             "suggestion to add it."
         ),
         "startFresh": _("Start a new chart"),
+        # The Visual tab's modes
+        "mode.legend": _("Visual editor"),
+        "mode.voyager": _("Voyager"),
+        "mode.simple": _("Simple"),
+        "mode.narrow": _(
+            "Voyager needs a wider screen, so the Simple settings are shown. "
+            "You can still choose Voyager."
+        ),
+        # Voyager (voyager-spec.js and the Voyager mode in chart-builder.js)
+        "voyager.mouse": _(
+            "Voyager is used with a mouse or touchpad: drag fields onto its shelves, or "
+            "double-click them. With a keyboard or a screen reader, use Simple."
+        ),
+        "voyager.useSimple": _("Switch to Simple"),
+        "voyager.frameTitle": _("Voyager chart editor"),
+        "voyager.loading": _("Loading Voyager…"),
+        "voyager.loadingData": _("Loading the data…"),
+        "voyager.startFresh": _("Start a new chart in Voyager"),
+        "voyager.startedFresh": _(
+            "Voyager starts from the data. The chart you make there replaces the spec."
+        ),
+        "voyager.noChart": _(
+            "Voyager isn't showing one chart, so the page keeps the last one. Put fields "
+            "on the shelves, or choose a related view, to make one."
+        ),
+        "voyager.sampled": _(
+            "Voyager shows the first %(shown)s of %(total)s rows. "
+            "The chart on the page uses them all."
+        ),
+        "voyager.problems": _(
+            "The chart from Voyager is in the page, but its spec has problems. "
+            "Fix them in Simple or Code before saving:"
+        ),
+        "voyager.error": _("Voyager: %(message)s"),
+        "voyager.frozen": _(
+            "The code isn't valid JSON (line %(line)s: %(error)s), so Voyager can't open it. "
+            "Fix it in Code."
+        ),
+        "voyager.noData": _(
+            "Voyager needs a dataset with data in this form. Add data to the chart, or edit "
+            "the spec in Code."
+        ),
+        "voyager.codeData": _(
+            "This chart's data comes from code, so Voyager isn't available. Edit the spec in Code."
+        ),
+        "voyager.unavailable": _("“%(name)s” can't be shown in Voyager: %(error)s"),
+        "voyager.lostIntro": _(
+            "Voyager can't show all of this chart. Opening it here changes nothing, but if "
+            "you change the chart in Voyager, the page gets Voyager's version, without:"
+        ),
+        "voyager.lostAdvice": _("To keep them, edit the chart in Simple or Code instead."),
+        "voyager.lost.grouped": _("grouped bars: Voyager shows them stacked"),
+        "voyager.lost.params": _("its parameters and selections (params)"),
+        "voyager.lost.transform": _("its calculations and filters (transform)"),
+        "voyager.lost.data": _(
+            "the data it loads (data): Voyager's chart uses the dataset chosen here"
+        ),
+        "voyager.lost.channel": _("its “%(channel)s” encoding"),
+        "voyager.lost.path": "%(path)s",
+        "voyager.blocked": _(
+            "Voyager can't open this chart: %(problem)s. Edit it in Simple or Code, or "
+            "start a new chart in Voyager, which replaces it once you make one."
+        ),
+        "voyager.blocked.notObject": _("it isn't a JSON object"),
+        "voyager.blocked.vega": _("it's a Vega spec, and Voyager makes Vega-Lite charts"),
+        "voyager.blocked.noSchema": _("it has no Vega-Lite $schema"),
+        "voyager.blocked.composite": _(
+            "it combines several views (it has “%(key)s”), and Voyager makes one view at a time"
+        ),
+        "voyager.blocked.noMark": _("it has no mark"),
+        "voyager.blocked.mark": _("Voyager has no “%(mark)s” charts"),
+        "voyager.blocked.encoding": _("it has no field encodings that Voyager can show"),
+        "voyager.blocked.seed": _("Voyager couldn't read it (%(error)s)"),
         "preview": _("Preview"),
         "colours": _("Colours"),
         "light": _("Light mode"),

@@ -1,7 +1,8 @@
 # Version-bump pull requests for the pinned npm packages (vendored Vega
-# libraries, CodeMirror, esbuild), Python dependencies and CI actions. After
-# merging an npm bump, run `npm run build` so the committed vendored files
-# match; CI fails until they do.
+# libraries, CodeMirror, esbuild; not Voyager's, see below), Python
+# dependencies and CI actions. After merging an npm bump, run
+# `npm run build` so the committed vendored files match; CI fails until
+# they do.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -13,6 +14,32 @@ updates:
         patterns: ["vega", "vega-lite", "vega-embed"]
       codemirror:
         patterns: ["@codemirror/*", "@lezer/*"]
+    # Vega Voyager (the admin's visual editor) and the builds it was made
+    # with are frozen: Voyager's last release (2018) needs these versions,
+    # and scripts/vendor.mjs patches their exact text. The old vega
+    # packages are installed under aliases (voyager-vega...).
+    ignore:
+      - dependency-name: "datavoyager"
+      - dependency-name: "voyager-vega"
+      - dependency-name: "voyager-vega-lite"
+      - dependency-name: "voyager-vega-tooltip"
+      - dependency-name: "react"
+      - dependency-name: "react-dom"
+      - dependency-name: "prop-types"
+      - dependency-name: "redux"
+      - dependency-name: "react-redux"
+      - dependency-name: "redux-thunk"
+      - dependency-name: "redux-undo"
+      - dependency-name: "react-dnd"
+      - dependency-name: "react-dnd-html5-backend"
+      - dependency-name: "tether"
+      - dependency-name: "react-tether"
+      - dependency-name: "moment"
+      - dependency-name: "lodash"
+      - dependency-name: "react-css-modules"
+      - dependency-name: "object-unfreeze"
+      - dependency-name: "hoist-non-react-statics"
+      - dependency-name: "font-awesome"
   - package-ecosystem: pip
     directory: /
     schedule:

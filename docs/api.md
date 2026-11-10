@@ -74,6 +74,8 @@ The editor follows, as one change that can be undone. The editor also fires `inp
 
 .. autofunction:: wagtail_vega.views.document_rows
 
+.. autofunction:: wagtail_vega.views.voyager
+
 .. autoclass:: wagtail_vega.views.SourceRowsView
    :members: get_rows
 ```

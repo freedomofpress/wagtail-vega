@@ -11,7 +11,7 @@ from wagtail.admin.telepath import register
 from wagtail.admin.telepath.widgets import WidgetAdapter
 
 from .builder_strings import builder_strings, code_editor_strings
-from .conf import get_allowed_hosts, get_setting
+from .conf import VISUAL_EDITORS, get_allowed_hosts, get_setting
 from .encoders import VegaJSONEncoder
 from .themes import get_themes
 
@@ -36,6 +36,10 @@ def admin_js(paths):
 BUILDER_JS = [
     "wagtail_vega/admin/sources.js",
     "wagtail_vega/admin/chart-spec.js",
+    # The Voyager mode's admin side (small); Voyager itself (vendor/voyager)
+    # only loads in its iframe, when the mode is first shown
+    "wagtail_vega/admin/voyager-spec.js",
+    "wagtail_vega/admin/voyager-editor.js",
     "wagtail_vega/admin/chart-builder.js",
 ]
 BUILDER_CSS = "wagtail_vega/admin/chart-builder.css"
@@ -50,6 +54,14 @@ BUILDER_PREVIEW_JS = [
 BUILDER_PREVIEW_CSS = "wagtail_vega/wagtail-vega.css"
 # The preview draws at most this many rows; the spec always loads them all
 BUILDER_PREVIEW_ROWS = 5000
+
+
+def visual_editor() -> str:
+    """The chart editor's default Visual mode, WAGTAIL_VEGA["VISUAL_EDITOR"]:
+    "voyager" or "simple" (an unknown value is reported by `manage.py check`,
+    and means "voyager")."""
+    value = get_setting("VISUAL_EDITOR")
+    return value if value in VISUAL_EDITORS else "voyager"
 
 
 class CodeEditor(forms.Textarea):
@@ -114,8 +126,9 @@ class CodeEditor(forms.Textarea):
 
     def builder_config(self) -> dict:
         """Settings for the chart builder (chart-builder.js): its endpoints,
-        the data host allowlist, the site's themes for the preview, and the
-        scripts the preview loads when the builder first opens."""
+        the data host allowlist, the site's themes for the preview, the
+        scripts the preview loads when the builder first opens, the Visual
+        tab's default mode, and Voyager's page."""
         themes = {
             name: {
                 "config": theme.config,
@@ -136,6 +149,8 @@ class CodeEditor(forms.Textarea):
             "scripts": [static(path) for path in BUILDER_PREVIEW_JS],
             "stylesheet": static(BUILDER_PREVIEW_CSS),
             "previewRows": BUILDER_PREVIEW_ROWS,
+            "visualEditor": visual_editor(),
+            "voyager": {"frameUrl": reverse("wagtail_vega_voyager")},
             "strings": builder_strings(),
         }
 

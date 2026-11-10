@@ -2,9 +2,8 @@
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
-from wagtail.models import Site
 
-from tests.testapp.demo import create_demo_page
+from tests.testapp.demo import create_demo_page, ensure_site
 from tests.testapp.models import ChartPage
 
 
@@ -14,8 +13,10 @@ class Command(BaseCommand):
         if not User.objects.filter(username="admin").exists():
             User.objects.create_superuser("admin", "admin@example.com", "admin")
 
+        # The demo page is usually the site's root, and deleting it deletes the
+        # Site too (Site.root_page cascades), so recreate it if needed
         ChartPage.objects.all().delete()
-        site = Site.objects.get(is_default_site=True)
+        site = ensure_site()
         site.hostname, site.port, site.site_name = "localhost", 8000, "sandbox"
         site.save()
         page = create_demo_page(custom_source=True)

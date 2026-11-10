@@ -10,9 +10,16 @@
  *
  * THE EDITOR. "Edit chart" opens one <dialog> with:
  *
- * - Visual settings (a "Visual" tab): dataset, chart type, encodings…,
- *   read from and written to the spec with chart-spec.js's round-trip
- *   rules: what the settings don't show is kept as it is.
+ * - A "Visual" tab, in one of two modes, chosen with a switch at its top:
+ *   - Voyager (Vega Voyager, in a sandboxed iframe: voyager-editor.js and
+ *     voyager-spec.js). The default, unless WAGTAIL_VEGA["VISUAL_EDITOR"]
+ *     is "simple" or the screen is too narrow for it. It needs a mouse,
+ *     and says so.
+ *   - Simple: visual settings (dataset, chart type, encodings…), read from
+ *     and written to the spec with chart-spec.js's round-trip rules: what
+ *     the settings don't show is kept as it is. Every one is a native form
+ *     control, so it works with a keyboard and screen readers.
+ *   The mode last chosen is remembered in the browser.
  * - The code (a "Code" tab): the field's own CodeMirror editor
  *   (code-editor.js), moved into the dialog while it's open, so its checks,
  *   undo history and server errors carry on.
@@ -30,6 +37,20 @@
  *   edit does. An empty spec shows a suggested chart, which is only written
  *   once the editor changes a setting or picks a suggestion.
  *
+ * VOYAGER. Voyager only knows Vega-Lite 2 single views. Its charts are
+ * converted to Vega-Lite 6 with the data by name (voyager-spec.js), and
+ * written like the settings' changes, with the same rule: opening the editor
+ * never changes the spec. The first charts Voyager reports after it opens one
+ * are its baseline, and only a report that differs from it, after the editor
+ * has done something in Voyager, is written (voyagerSpec.Baseline). Before
+ * the field's chart is opened in Voyager, what Voyager would drop (grouped
+ * bars, params, axis settings…) is worked out and listed, suggesting Simple
+ * or Code; a chart it can't open at all (Vega, layers…) isn't opened. When
+ * the spec changes elsewhere (Simple, Code, undo), Voyager opens it again,
+ * with a new baseline, the next time it's shown. Its last change is flushed
+ * on Close and Esc, and when the tab or mode changes. While Voyager is
+ * shown, the dialog's own preview is hidden, to give it the room.
+ *
  * Every change goes to the textarea as it's made (code-editor.js debounces
  * typing, and flushes on blur, close and submit), with a bubbling "input"
  * event, so Wagtail's unsaved-changes and autosave controllers see it.
@@ -46,7 +67,8 @@
  * needs no 'unsafe-eval'.
  *
  * All text comes from the server (builder_strings.py), looked up by key.
- * Needs data-format.js, sources.js, code-editor.js and chart-spec.js.
+ * Needs data-format.js, sources.js, code-editor.js and chart-spec.js, and
+ * for the Voyager mode voyager-spec.js and voyager-editor.js.
  */
 (() => {
   "use strict";
@@ -57,6 +79,10 @@
   const CUSTOM = "__custom__";
   const PREVIEW_DELAY = 200; // ms, in the editor
   const FIELD_DELAY = 400; // ms, for the field's preview
+  const VOYAGER_WRITE_DELAY = 250; // ms, between Voyager's reports and the field
+  // Voyager's layout doesn't fit narrower screens: Simple is shown instead
+  const VOYAGER_NARROW = "(max-width: 47.99em)";
+  const MODE_STORAGE_KEY = "wagtail-vega:visual-editor";
   // Fields draw their chart once they're (nearly) on screen
   const OBSERVE = { rootMargin: "200px 0px" };
 
@@ -263,20 +289,41 @@
     return rowsCache.get(key);
   }
 
-  /** {rows: {name: rows}, errors: [message]} for the datasets. */
+  /** {rows: {name: rows}, errors: [message], errorsByName: {name: message}}
+   * for the datasets. */
   async function loadAllRows(datasets, config) {
     const rows = {};
     const errors = [];
+    const errorsByName = {};
     await Promise.all(
       datasets.map(async (dataset) => {
         try {
           rows[dataset.name] = await cachedRows(dataset, config);
         } catch (e) {
           errors.push(e.message);
+          errorsByName[dataset.name] = e.message;
         }
       }),
     );
-    return { rows, errors };
+    return { rows, errors, errorsByName };
+  }
+
+  /** The Visual tab's mode last chosen in this browser, if any. */
+  function storedMode() {
+    try {
+      const mode = window.localStorage?.getItem(MODE_STORAGE_KEY);
+      return mode === "voyager" || mode === "simple" ? mode : null;
+    } catch {
+      return null; // storage blocked
+    }
+  }
+
+  function storeMode(mode) {
+    try {
+      window.localStorage?.setItem(MODE_STORAGE_KEY, mode);
+    } catch {
+      // storage blocked or full: the setting's default is used next time
+    }
   }
 
   // -- Drawing charts -----------------------------------------------------------
@@ -526,19 +573,44 @@
               <button type="button" role="tab" id="${id}-tab-visual" aria-controls="${id}-panel-visual" aria-selected="true" data-tab="visual">${e("tab.visual")}</button>
               <button type="button" role="tab" id="${id}-tab-code" aria-controls="${id}-panel-code" aria-selected="false" tabindex="-1" data-tab="code">${e("tab.code")}<span class="wagtail-vega-builder__badge" data-code-badge hidden> <span aria-hidden="true">⚠</span><span class="visually-hidden">${e("tab.codeProblems")}</span></span></button>
             </div>
-            <div class="wagtail-vega-builder__panel" role="tabpanel" id="${id}-panel-visual" aria-labelledby="${id}-tab-visual" data-panel="visual">
-              <div class="wagtail-vega-builder__notice" data-controls-notice hidden>
-                <p id="${id}-notice" data-controls-note></p>
-                <button type="button" class="button button-small" data-start-fresh aria-describedby="${id}-notice" hidden>${e("startFresh")}</button>
-              </div>
-              <fieldset class="wagtail-vega-builder__settings" data-controls-fieldset>
-                <legend class="visually-hidden">${e("controls")}</legend>
-                <div class="wagtail-vega-builder__dataset" data-dataset-picker hidden>
-                  <label for="${id}-dataset">${e("dataset")}</label>
-                  <select id="${id}-dataset" data-dataset></select>
+            <div class="wagtail-vega-builder__panel wagtail-vega-builder__panel--visual" role="tabpanel" id="${id}-panel-visual" aria-labelledby="${id}-tab-visual" data-panel="visual">
+              <fieldset class="wagtail-vega-builder__modes" data-modes>
+                <legend>${e("mode.legend")}</legend>
+                <div class="wagtail-vega-builder__mode-options">
+                  <input type="radio" name="${id}-mode" id="${id}-mode-voyager" value="voyager" data-mode>
+                  <label for="${id}-mode-voyager">${e("mode.voyager")}</label>
+                  <input type="radio" name="${id}-mode" id="${id}-mode-simple" value="simple" data-mode>
+                  <label for="${id}-mode-simple">${e("mode.simple")}</label>
                 </div>
-                <div class="wagtail-vega-builder__controls" data-controls></div>
+                <p class="wagtail-vega-builder__hint" data-mode-note hidden></p>
               </fieldset>
+              <div class="wagtail-vega-builder__dataset" data-dataset-picker hidden>
+                <label for="${id}-dataset">${e("dataset")}</label>
+                <select id="${id}-dataset" data-dataset></select>
+              </div>
+              <div class="wagtail-vega-builder__voyager" data-mode-pane="voyager" hidden>
+                <p class="wagtail-vega-builder__voyager-mouse">${e("voyager.mouse")} <button type="button" class="button button-small button-secondary" data-use-simple>${e("voyager.useSimple")}</button></p>
+                <div class="wagtail-vega-builder__notice" data-voyager-notice hidden>
+                  <div id="${id}-voyager-note" data-voyager-note></div>
+                  <button type="button" class="button button-small" data-voyager-fresh aria-describedby="${id}-voyager-note" hidden>${e("voyager.startFresh")}</button>
+                </div>
+                <p class="wagtail-vega-builder__voyager-status" data-voyager-status aria-live="polite"></p>
+                <div class="wagtail-vega-builder__voyager-host" data-voyager-host hidden></div>
+                <div class="wagtail-vega-builder__voyager-problems" data-voyager-problems hidden>
+                  <p>${e("voyager.problems")}</p>
+                  <ul data-voyager-problem-list></ul>
+                </div>
+              </div>
+              <div data-mode-pane="simple">
+                <div class="wagtail-vega-builder__notice" data-controls-notice hidden>
+                  <p id="${id}-notice" data-controls-note></p>
+                  <button type="button" class="button button-small" data-start-fresh aria-describedby="${id}-notice" hidden>${e("startFresh")}</button>
+                </div>
+                <fieldset class="wagtail-vega-builder__settings" data-controls-fieldset>
+                  <legend class="visually-hidden">${e("controls")}</legend>
+                  <div class="wagtail-vega-builder__controls" data-controls></div>
+                </fieldset>
+              </div>
             </div>
             <div class="wagtail-vega-builder__panel wagtail-vega-builder__panel--code" role="tabpanel" id="${id}-panel-code" aria-labelledby="${id}-tab-code" data-panel="code" hidden>
               <p class="wagtail-vega-builder__hint" id="${id}-code-help">${e("codeHelp")}</p>
@@ -721,6 +793,9 @@
     }
 
     showTab(name) {
+      // Voyager's last change goes into the code before it's shown
+      if (name !== this.tab && this.voyagerShown) this.flushVoyager();
+      this.tab = name;
       for (const tab of this.dialog.querySelectorAll("[role=tab]")) {
         const selected = tab.dataset.tab === name;
         tab.setAttribute("aria-selected", String(selected));
@@ -730,6 +805,87 @@
         panel.hidden = panel.dataset.panel !== name;
       }
       if (name === "code") this.editor.view.requestMeasure();
+      this.updateLayout();
+    }
+
+    // -- The Visual tab's modes: Voyager or Simple ------------------------------------
+
+    /** The mode the Visual tab opens in: the one last chosen in this
+     * browser, else the site's setting; Simple on a narrow screen. */
+    initialMode() {
+      const voyager = Boolean(this.config.voyager?.frameUrl && admin.VoyagerFrame && admin.voyagerSpec);
+      if (!voyager) return { mode: "simple", narrow: false };
+      let mode = storedMode() || (this.config.visualEditor === "simple" ? "simple" : "voyager");
+      const narrow = mode === "voyager" && Boolean(window.matchMedia?.(VOYAGER_NARROW).matches);
+      if (narrow) mode = "simple";
+      return { mode, narrow };
+    }
+
+    setupModes() {
+      const { mode, narrow } = this.initialMode();
+      const available = Boolean(this.config.voyager?.frameUrl && admin.VoyagerFrame && admin.voyagerSpec);
+      this.$("[data-modes]").hidden = !available;
+      const note = this.$("[data-mode-note]");
+      note.textContent = narrow ? t("mode.narrow") : "";
+      note.hidden = !narrow;
+      for (const radio of this.dialog.querySelectorAll("[data-mode]")) {
+        radio.checked = radio.value === mode;
+        radio.addEventListener("change", () => {
+          if (radio.checked) this.setMode(radio.value, { remember: true });
+        });
+      }
+      this.$("[data-use-simple]").addEventListener("click", () => {
+        this.setMode("simple", { remember: true });
+        this.$("[data-mode][value=simple]").focus();
+      });
+      this.$("[data-voyager-fresh]").addEventListener("click", () => this.reloadVoyager({ fresh: true }));
+      this.visualMode = mode;
+      this.showModePanes();
+    }
+
+    setMode(mode, { remember = false } = {}) {
+      if (remember) {
+        storeMode(mode);
+        this.$("[data-mode-note]").hidden = true;
+      }
+      if (mode === this.visualMode) return;
+      if (this.voyagerShown) this.flushVoyager();
+      this.visualMode = mode;
+      for (const radio of this.dialog.querySelectorAll("[data-mode]")) radio.checked = radio.value === mode;
+      this.showModePanes();
+      this.updateLayout();
+      if (mode === "simple") this.startSimpleIfPending();
+    }
+
+    showModePanes() {
+      for (const pane of this.dialog.querySelectorAll("[data-mode-pane]")) {
+        pane.hidden = pane.dataset.modePane !== this.visualMode;
+      }
+    }
+
+    get voyagerShown() {
+      return Boolean(this.dialog) && this.tab === "visual" && this.visualMode === "voyager";
+    }
+
+    /** Voyager gets the dialog's width: the preview is hidden while it's
+     * shown (Voyager draws its own chart). */
+    updateLayout() {
+      const voyager = this.voyagerShown;
+      const was = this.dialog.classList.contains("is-voyager");
+      this.dialog.classList.toggle("is-voyager", voyager);
+      if (voyager) this.showVoyager();
+      else if (was) this.schedulePreview(); // drawn at the preview's size
+    }
+
+    /** Opened on an empty spec in Voyager mode, then switched to Simple: it
+     * starts from a suggestion, as if it had opened in Simple. */
+    startSimpleIfPending() {
+      if (!this.loaded || this.mode !== "pending" || this.suggestionStarted) return;
+      if (this.openingText.trim() && this.openingText.trim() !== "null") return;
+      this.suggestionStarted = true;
+      this.fromControls();
+      this.$("[data-suggestions]").open = true;
+      this.announce(t("startedFromSuggestion"));
     }
 
     // -- Opening and closing ---------------------------------------------------------
@@ -737,6 +893,7 @@
     open() {
       this.dialog = this.buildDialog();
       this.setupTabs();
+      // One dataset picker, for both the Simple settings and Voyager
       const select = this.$("[data-dataset]");
       for (const dataset of this.datasets) select.add(new Option(dataset.name, dataset.name));
       for (const name of this.extraNames) {
@@ -746,7 +903,10 @@
       }
       if (this.datasetName) select.value = this.datasetName;
       this.$("[data-dataset-picker]").hidden = this.datasets.length + this.extraNames.length < 2;
-      select.addEventListener("change", () => this.switchDataset(select.value));
+      select.addEventListener("change", () => {
+        if (this.visualMode === "voyager") this.switchVoyagerDataset(select.value);
+        else this.switchDataset(select.value);
+      });
 
       const scheme = this.$("[data-scheme]");
       scheme.value = this.scheme;
@@ -763,6 +923,8 @@
       // Escape (native "cancel") and dialog.close() both end up here
       this.dialog.addEventListener("close", () => this.cleanUp());
       this.buildControls();
+      this.tab = "visual";
+      this.setupModes();
 
       // The field's own code editor, in the Code tab while the dialog is open
       const code = this.$("[data-code]");
@@ -773,9 +935,11 @@
         this.editor.onChange((text) => {
           this.updateUndo();
           this.fromCode(text);
+          this.codeChangedForVoyager(text);
         }),
         this.editor.onProblems((problems) => {
           this.$("[data-code-badge]").hidden = !problems.some((p) => p.severity === "error");
+          this.showVoyagerProblems(problems);
         }),
       ];
 
@@ -784,31 +948,36 @@
       this.$("[data-tab=visual]").focus();
       this.setNotice(t("autosaveNote"));
       loadLibraries(this.config).catch(() => {});
+      this.updateLayout();
       this.load();
     }
 
     async load() {
       if (this.datasets.length) this.setStatus(t("loading", { name: this.datasets.map((d) => d.name).join(", ") }));
-      const { rows, errors } = await loadAllRows(this.datasets, this.config);
-      if (!this.dialog) return;
+      const { rows, errors, errorsByName } = await loadAllRows(this.datasets, this.config);
+      if (!this.dialog || this.closing) return;
       this.rowsByName = rows;
+      this.rowErrors = errorsByName;
       this.loaded = true;
       this.setStatus("");
       this.setErrors(errors);
       this.fromCode(this.text);
-      if (this.mode === "pending") {
+      if (this.mode === "pending" && this.visualMode === "simple") {
         // Opened on an empty spec: there's nothing to protect, so put the
         // suggested chart in the page straight away, rather than showing a
         // chart that isn't saved. ("Undo changes since opening" empties the
-        // field again.) Clearing the code later leaves it empty.
+        // field again.) Clearing the code later leaves it empty. (In
+        // Voyager, the chart the editor makes there is written instead.)
+        this.suggestionStarted = true;
         this.fromControls();
         this.$("[data-suggestions]").open = true;
         this.announce(t("startedFromSuggestion"));
       }
       this.$("[data-start-fresh]").hidden = this.mode !== "unrepresentable";
+      if (this.voyagerShown) this.showVoyager();
       // Focus the first setting, unless the editor has already moved on
       const active = document.activeElement;
-      if (this.mode === "visual" || this.mode === "pending") {
+      if (this.visualMode === "simple" && (this.mode === "visual" || this.mode === "pending")) {
         if (!active || active === document.body || active.matches("[data-tab=visual], dialog")) {
           (this.$("[data-dataset-picker]").hidden ? this.$("[data-prop=mark]") : this.$("[data-dataset]")).focus();
         }
@@ -821,19 +990,28 @@
     }
 
     cleanUp() {
-      if (!this.dialog) return;
+      if (!this.dialog || this.closing) return;
+      this.closing = true;
       clearTimeout(this.previewTimer);
-      // Nothing's lost: whatever was typed last goes to the field now
-      this.editor.flush();
-      for (const unsubscribe of this.unsubscribe || []) unsubscribe();
-      this.editor.host.hidden = true;
-      this.textarea.after(this.editor.host);
-      this.$("[data-chart]").wagtailVegaView?.finalize();
-      this.dialog.remove();
-      this.dialog = null;
-      document.documentElement.classList.remove("wagtail-vega-builder-open");
-      this.trigger.focus();
-      this.launcher.closed();
+      clearTimeout(this.voyagerReloadTimer);
+      const finish = () => {
+        // Nothing's lost: whatever was typed last goes to the field now
+        this.editor.flush();
+        for (const unsubscribe of this.unsubscribe || []) unsubscribe();
+        this.editor.host.hidden = true;
+        this.textarea.after(this.editor.host);
+        this.$("[data-chart]").wagtailVegaView?.finalize();
+        this.voyager?.destroy();
+        this.dialog.remove();
+        this.dialog = null;
+        document.documentElement.classList.remove("wagtail-vega-builder-open");
+        this.trigger.focus();
+        this.launcher.closed();
+      };
+      // Voyager's last change, which it may not have reported yet, goes to
+      // the field first. The dialog is closed (hidden) meanwhile.
+      if (this.voyager) this.flushVoyager().finally(finish);
+      else finish();
     }
 
     // -- Messages ---------------------------------------------------------------
@@ -986,6 +1164,9 @@
     }
 
     undo() {
+      // Voyager's change waiting to be written would undo the undo
+      clearTimeout(this.voyagerWriteTimer);
+      this.voyagerPending = null;
       this.editor.setText(this.openingText, { userEvent: "input.builder.undo" });
       this.editor.flush();
       this.announce(t("undone"));
@@ -1264,6 +1445,265 @@
       this.$("[data-kept-section]").hidden = !kept.length && !dropped.length;
     }
 
+    // -- Voyager -------------------------------------------------------------------
+
+    /** Show Voyager: the field's chart in it, opened again if the spec has
+     * changed since Voyager last had it, or why it can't be. */
+    showVoyager() {
+      if (!this.dialog || this.closing) return;
+      if (!this.loaded) {
+        this.voyagerStatus(t("voyager.loadingData"));
+        return;
+      }
+      if (this.voyagerText === undefined || this.voyagerText !== this.text) this.reloadVoyager();
+    }
+
+    voyagerStatus(text) {
+      this.$("[data-voyager-status]").textContent = text;
+    }
+
+    /** A notice above Voyager: `text`, optionally a list of `items` ({text,
+     * code}) and a closing `advice`; `blocking` for the ones that keep
+     * Voyager from showing the chart. */
+    voyagerNotice({ text = "", items = [], advice = "", blocking = false, fresh = false } = {}) {
+      const notice = this.$("[data-voyager-notice]");
+      const note = this.$("[data-voyager-note]");
+      const children = [];
+      if (text) children.push(h("p", { text }));
+      if (items.length) {
+        children.push(
+          h("ul", {}, items.map((item) => h("li", {}, item.code ? h("code", { text: item.text }) : item.text))),
+        );
+      }
+      if (advice) children.push(h("p", { text: advice }));
+      note.replaceChildren(...children);
+      notice.hidden = !children.length;
+      notice.classList.toggle("is-blocking", blocking);
+      notice.classList.toggle("is-warning", !blocking && items.length > 0);
+      this.$("[data-voyager-fresh]").hidden = !fresh;
+    }
+
+    /** Why Voyager can't show anything for the current spec and data (a
+     * message), or null. */
+    voyagerUnavailable(datasetName) {
+      if (this.frozen) return t("voyager.frozen", this.frozen);
+      if (!this.hasDataField) return t("voyager.codeData");
+      if (!datasetName) return t("voyager.noData");
+      if (this.rowErrors?.[datasetName]) {
+        return t("voyager.unavailable", { name: datasetName, error: this.rowErrors[datasetName] });
+      }
+      const rows = this.rowsByName[datasetName];
+      if (!rows) return t("voyager.noData");
+      if (!rows.length) return t("noRows", { name: datasetName });
+      return null;
+    }
+
+    /** Open the code's spec in Voyager, with its dataset's rows. A new
+     * Baseline starts: Voyager's first reports are the spec as it shows it.
+     * `fresh`: start from the data only, without the spec (it replaces the
+     * spec once the editor makes a chart). `changed`: the load is itself a
+     * change (another dataset), so Voyager's chart is written. */
+    reloadVoyager({ fresh = false, changed = false, datasetName = null } = {}) {
+      const V = admin.voyagerSpec;
+      const text = this.text;
+      this.voyagerText = text;
+      clearTimeout(this.voyagerWriteTimer);
+      this.voyagerPending = null;
+      this.generation = (this.generation || 0) + 1;
+      this.baseline = null;
+      this.$("[data-voyager-problems]").hidden = true;
+      this.voyagerStatus("");
+      const host = this.$("[data-voyager-host]");
+
+      let spec = null;
+      const trimmed = text.trim();
+      if (trimmed && trimmed !== "null" && !this.frozen) {
+        try {
+          spec = JSON.parse(text);
+        } catch {
+          spec = null;
+        }
+      }
+      // The spec's dataset, if the form has its rows; else the one chosen
+      const named = typeof spec?.data?.name === "string" ? spec.data.name : null;
+      const name =
+        datasetName || (named && this.rowsByName[named] ? named : null) || this.datasetName || this.datasets[0]?.name || null;
+      this.voyagerDataset = name;
+      if (name && this.datasets.some((d) => d.name === name)) {
+        this.datasetName = name;
+        this.$("[data-dataset]").value = name;
+      }
+
+      const unavailable = this.voyagerUnavailable(name);
+      if (unavailable) {
+        host.hidden = true;
+        this.voyagerNotice({ text: unavailable, blocking: true });
+        return;
+      }
+
+      // What Voyager would drop from the field's chart, worked out before
+      // it's opened there
+      let seed = null;
+      this.voyagerProblems = null;
+      if (spec !== null && !fresh) {
+        const problems = V.voyagerProblems(spec, name);
+        if (problems.blocked) {
+          host.hidden = true;
+          this.voyagerNotice({
+            text: t("voyager.blocked", { problem: message(problems.blocked) }),
+            blocking: true,
+            fresh: true,
+          });
+          return;
+        }
+        seed = problems.voyager;
+        this.voyagerProblems = problems;
+        this.showVoyagerLosses(problems.lost);
+      } else if (fresh) {
+        this.voyagerNotice({ text: t("voyager.startedFresh") });
+      } else {
+        this.voyagerNotice();
+      }
+      if (changed && seed) {
+        // Another dataset: only open the chart if it has the chart's fields
+        const columns = new Set(this.columnsFor(name).map((c) => c.name));
+        const fields = Object.values(seed.encoding).map((d) => d.field);
+        if (!fields.every((f) => f === "*" || columns.has(f))) seed = null;
+      }
+
+      const previous = spec !== null && typeof spec === "object" && !Array.isArray(spec) ? spec : null;
+      this.baseline = new V.Baseline({ text, previous, datasetName: name, changed });
+      this.voyagerSeeded = Boolean(seed);
+
+      if (!this.voyager) {
+        this.voyager = new admin.VoyagerFrame({
+          url: this.config.voyager.frameUrl,
+          title: t("voyager.frameTitle"),
+          onMessage: (data) => this.onVoyagerMessage(data),
+        });
+      }
+      const frame = this.voyager.element();
+      if (!frame.isConnected) {
+        host.append(frame);
+        this.voyagerStatus(t("voyager.loading"));
+      }
+      host.hidden = false;
+      const { rows, sampled } = sampleRows({ [name]: this.rowsByName[name] }, this.config.previewRows || 5000);
+      this.voyagerSampled = sampled.length
+        ? t("voyager.sampled", { shown: sampled[0].shown.toLocaleString(), total: sampled[0].total.toLocaleString() })
+        : "";
+      this.voyager.load({ generation: this.generation, values: rows[name], spec: seed });
+    }
+
+    showVoyagerLosses(lost) {
+      if (!lost.length) {
+        this.voyagerNotice();
+        return;
+      }
+      this.voyagerNotice({
+        text: t("voyager.lostIntro"),
+        items: lost.map((m) => ({ text: message(m), code: m.key === "voyager.lost.path" })),
+        advice: t("voyager.lostAdvice"),
+      });
+    }
+
+    onVoyagerMessage(data) {
+      if (!this.dialog) return;
+      if (data.type === "close") {
+        if (!this.closing) this.close();
+        return;
+      }
+      if (data.type === "error") {
+        this.setErrors([t("voyager.error", { message: String(data.message).slice(0, 300) })]);
+        return;
+      }
+      // Reports about an earlier load (e.g. before the spec changed) are stale
+      if (data.generation !== this.generation || !this.baseline) return;
+      if (data.type === "loaded") {
+        this.voyagerStatus(this.voyagerSampled || "");
+        if (this.voyagerSeeded && !data.seeded) {
+          // Voyager couldn't open the chart after all: it shows the data
+          this.voyagerNotice({
+            text: t("voyager.blocked", { problem: t("voyager.blocked.seed", { error: data.warning || "?" }) }),
+            blocking: true,
+            fresh: false,
+          });
+        }
+      } else if (data.type === "spec") {
+        const spec = data.spec && typeof data.spec === "object" ? data.spec : null;
+        if (!data.user && spec && this.voyagerProblems && this.voyagerSeeded) {
+          // Voyager has opened the field's chart: add anything it changed
+          // that the round trip didn't predict
+          const problems = admin.voyagerSpec.voyagerProblems(JSON.parse(this.voyagerText), this.voyagerDataset, spec);
+          if (!problems.blocked) this.showVoyagerLosses(problems.lost);
+        }
+        if (data.user && !spec) this.voyagerStatus(t("voyager.noChart"));
+        else this.voyagerStatus(this.voyagerSampled || "");
+        const text = this.baseline.report(spec, { user: Boolean(data.user) });
+        if (text !== null) {
+          this.voyagerPending = text;
+          clearTimeout(this.voyagerWriteTimer);
+          this.voyagerWriteTimer = setTimeout(() => this.writeVoyager(), VOYAGER_WRITE_DELAY);
+        }
+        if (data.flush !== undefined) this.writeVoyager();
+      }
+    }
+
+    /** Write Voyager's last change into the code, and so the field. */
+    writeVoyager() {
+      clearTimeout(this.voyagerWriteTimer);
+      const text = this.voyagerPending;
+      this.voyagerPending = null;
+      if (text === null || text === undefined || !this.dialog) return;
+      // The spec changed elsewhere (e.g. "Undo changes since opening")
+      // since Voyager opened it: that change wins, and Voyager reopens
+      if (this.text !== this.voyagerText) return;
+      this.voyagerText = text;
+      this.editor.setText(text, { userEvent: "input.voyager" });
+      this.editor.flush();
+      this.updateUndo();
+    }
+
+    /** Ask Voyager for its chart now, and write it if it has changed. */
+    async flushVoyager() {
+      if (!this.voyager || !this.baseline) return;
+      await this.voyager.flush();
+      this.writeVoyager();
+    }
+
+    /** The code changed: Voyager opens it again when it's next shown (now,
+     * if it's shown), unless the change was Voyager's own. */
+    codeChangedForVoyager(text) {
+      if (this.voyagerText === undefined || text === this.voyagerText) return;
+      clearTimeout(this.voyagerWriteTimer);
+      this.voyagerPending = null;
+      if (!this.voyagerShown) return;
+      clearTimeout(this.voyagerReloadTimer);
+      this.voyagerReloadTimer = setTimeout(() => this.showVoyager(), PREVIEW_DELAY);
+    }
+
+    switchVoyagerDataset(name) {
+      this.flushVoyager().then(() => {
+        if (!this.dialog || this.closing) return;
+        this.datasetName = name;
+        this.$("[data-dataset]").value = name;
+        this.reloadVoyager({ changed: true, datasetName: name });
+        this.announce(t("datasetNow", { name }));
+      });
+    }
+
+    /** The server's (and the code editor's) problems with the spec Voyager
+     * wrote, under Voyager: it's written regardless, as everywhere else. */
+    showVoyagerProblems(problems) {
+      const box = this.$("[data-voyager-problems]");
+      const errors = problems.filter((p) => p.severity === "error");
+      const mine = this.baseline?.dirty && this.text === this.voyagerText;
+      box.hidden = !mine || !errors.length;
+      this.$("[data-voyager-problem-list]").replaceChildren(
+        ...(mine ? errors : []).map((p) => h("li", { text: t("field.problem", p) })),
+      );
+    }
+
     // -- Preview ------------------------------------------------------------------
 
     schedulePreview() {
@@ -1272,7 +1712,8 @@
     }
 
     async renderPreview() {
-      if (!this.dialog || !this.current) return;
+      // Hidden while Voyager is shown: drawn when the preview's shown again
+      if (!this.dialog || this.closing || !this.current || this.voyagerShown) return;
       const token = ++this.previewToken;
       const theme = themeFor(this.config, this.themeField);
       // Light and dark only differ with a dark config or dark fallbacks

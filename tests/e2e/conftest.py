@@ -36,6 +36,14 @@ def _no_autosave(settings):
     settings.WAGTAIL_AUTOSAVE_INTERVAL = 0
 
 
+@pytest.fixture(autouse=True)
+def _visual_editor(settings):
+    """The chart editor's Visual tab opens in Simple mode in browser tests,
+    which drive its settings. Voyager, the default, is tested in
+    test_voyager.py, which overrides this fixture."""
+    settings.WAGTAIL_VEGA = {**settings.WAGTAIL_VEGA, "VISUAL_EDITOR": "simple"}
+
+
 @pytest.fixture
 def vega_settings(settings):
     """A copy of the test project's WAGTAIL_VEGA that tests can modify."""

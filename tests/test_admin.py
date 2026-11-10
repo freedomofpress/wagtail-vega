@@ -1,5 +1,6 @@
 """Tests that go through the Wagtail admin: create, validate, preview, serve."""
 
+import io
 import json
 
 import pytest
@@ -265,3 +266,16 @@ def test_edit_page_loads_the_catalogue_before_admin_scripts(admin_client, add_ur
     catalogue = html.index(reverse("wagtail_vega_jsi18n"))
     assert catalogue < html.index("wagtail_vega/admin/data-format.js")
     assert catalogue < html.index("wagtail_vega/admin/json-source.js")
+
+
+def test_seed_sandbox_can_run_again(db):
+    """Re-seeding replaces the demo page even though it's the site's root
+    (deleting it used to delete the Site, and the second run failed)."""
+    from django.core.management import call_command
+    from wagtail.models import Site
+
+    call_command("seed_sandbox", stdout=io.StringIO())
+    call_command("seed_sandbox", stdout=io.StringIO())
+    site = Site.objects.get(is_default_site=True)
+    assert site.root_page.specific.title == "Chart examples"
+    assert ChartPage.objects.count() >= 1

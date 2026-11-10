@@ -69,6 +69,10 @@ jobs:
           npm run build
           git diff --exit-code wagtail_vega/static/wagtail_vega/vendor/ \
             wagtail_vega/static/wagtail_vega/admin/vendor/ wagtail_vega/schemas/
+          # ...and that it wrote no files that aren't committed
+          test -z "$(git status --porcelain --untracked-files=all \
+            wagtail_vega/static/wagtail_vega/vendor/ \
+            wagtail_vega/static/wagtail_vega/admin/vendor/ wagtail_vega/schemas/)"
 
   lint:
     runs-on: ubuntu-latest

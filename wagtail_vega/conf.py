@@ -29,7 +29,12 @@ DEFAULTS: dict[str, Any] = {
     "VALIDATE_SCHEMA": True,
     # Default vega-embed options
     "EMBED_OPTIONS": {"actions": False, "renderer": "svg"},
+    # The mode the chart editor's Visual tab opens in: "voyager" (Vega
+    # Voyager) or "simple" (wagtail-vega's own settings)
+    "VISUAL_EDITOR": "voyager",
 }
+
+VISUAL_EDITORS = ("voyager", "simple")
 
 
 def get_setting(name: str) -> Any:

@@ -43,7 +43,7 @@ dev = ["wagtail-vega[test]", "ruff", "tox>=4"]
 path = "wagtail_vega/__init__.py"
 
 [tool.hatch.build.targets.sdist]
-include = ["wagtail_vega", "scripts", "tests", "README.md", "package.json", "package-lock.json"]
+include = ["wagtail_vega", "scripts", "tests", "README.md", "package.json", "package-lock.json", ".npmrc"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["wagtail_vega"]

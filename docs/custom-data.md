@@ -227,7 +227,7 @@ The options above supply data from code, with names you choose. To let **editors
 A source type takes:
 
 1. A {py:class}`~wagtail_vega.blocks.DatasetBlock` subclass, with the source in its `source_type` choices and its fields in `source_fields`, and its rows from `get_source_dataset()`.
-2. Optionally, an admin view that returns its rows for the admin, named in `source_rows_urls`. With it, editors see a summary of the rows under the source's fields ("✓ 12 rows · month (date), incidents (number)"), and the chart editor previews and builds charts from them. Without it, the chart editor lists the dataset but says it can't be previewed.
+2. Optionally, an admin view that returns its rows for the admin, named in `source_rows_urls`. With it, editors see a summary of the rows under the source's fields ("✓ 12 rows · month (date), incidents (number)"), and the chart editor previews and builds charts from them, in Voyager and in the Simple settings. Without it, the chart editor lists the dataset but says it can't be previewed.
 3. A `ChartBlock` subclass that uses your dataset block.
 
 No JavaScript is needed.

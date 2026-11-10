@@ -26,7 +26,13 @@ First release.
   - **Visual**: native form controls for the chart type, encodings and facets, with suggestions from the data's columns. They write a Vega-Lite v6 spec that refers to the dataset by name, and open existing single-view charts, keeping whatever they don't edit.
   - **Code**: the code editor, for any Vega or Vega-Lite spec. Specs the settings can't show (Vega, layers…) are edited and previewed here.
   - Every change goes into the field as it's made, so Wagtail's autosave saves it. There's no "use" or "cancel" step: Close and Esc just close, and **Undo changes since opening** puts the spec back. Opening the editor never changes the spec.
-  - `SpecBlock(builder=False)` leaves it out and shows the code editor inline. It replaces the Vega Voyager integration, which was removed before release along with its vendored bundle (2.6 MB) and its `voyager=` option.
+  - `SpecBlock(builder=False)` leaves it out and shows the code editor inline.
+- [Vega Voyager](https://github.com/vega/voyager) as the **Visual** tab's default mode, next to the settings, now called **Simple** (#36). A switch chooses between them; `WAGTAIL_VEGA["VISUAL_EDITOR"]` sets the default (`"voyager"` or `"simple"`), the browser remembers the editor's last choice, and narrow screens open in Simple.
+  - Voyager runs in a sandboxed iframe on an admin-only page, with no network access. It's vendored with npm (about 2.6 MB, loaded only when Voyager is first shown).
+  - It gets its data like the settings: pasted data, documents, URLs and custom sources, and the same **Dataset** picker.
+  - Its charts are converted to Vega-Lite v6 that loads the dataset by name, and written to the field as they change, so Wagtail autosaves them. Opening a chart in Voyager never changes it: only a change the editor makes there is written.
+  - Before a chart opens in Voyager, the editor lists what Voyager would drop, such as grouped bars (shown stacked), params and selections, or axis settings, and suggests Simple or Code. Charts Voyager can't open, such as Vega specs and layers, aren't opened.
+  - The Voyager mode notes that it needs a mouse, and offers Simple.
 - Editor and reader experience:
   - A spec that loads a dataset the chart doesn't have is an error on save, and underlined as you type.
   - Collapsed chart blocks are labelled with the spec's title, caption or description.

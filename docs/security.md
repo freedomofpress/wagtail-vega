@@ -46,7 +46,7 @@ The editor itself, CodeMirror 6, is vendored like the Vega libraries (see {doc}`
 
 ### The chart builder
 
-The spec field's **Edit chart** button (see {doc}`editor-experience`) opens the chart editor, whose **Visual** settings are the chart builder. It's wagtail-vega's own code, running in the admin page like the code editor, with no third-party code beyond the Vega libraries the site already ships:
+The spec field's **Edit chart** button (see {doc}`editor-experience`) opens the chart editor. Its **Visual** tab has two modes: **Simple**, the chart builder, described here, and **Voyager**, described [below](#voyager-security). The chart builder is wagtail-vega's own code, running in the admin page like the code editor, with no third-party code beyond the Vega libraries the site already ships:
 
 - It reads the chart's data from the form. Documents are read through `/admin/wagtail-vega/document-rows/?id=…` ({py:func}`wagtail_vega.views.document_rows`), which needs permission to access the admin and to choose (or change) the document. URL datasets are fetched by the admin page, and only from the allowlist, checked on the URL as the browser resolves it.
 - The spec it writes refers to the dataset by name, so no data is copied into it. It's written to the field as it's made, checked live with the validation endpoint above as in the code editor, and checked again when the page (or an autosave) is saved.
@@ -54,6 +54,21 @@ The spec field's **Edit chart** button (see {doc}`editor-experience`) opens the 
 
 :::{note}
 **If your admin has a Content Security Policy**, the builder needs nothing beyond what the admin itself needs: `script-src` and `style-src` for your static files (no `'unsafe-eval'` or `'unsafe-inline'` for the builder), and `connect-src 'self'` for the validation and document endpoints. Add the hosts of any URL datasets to `connect-src`, since the admin page fetches them for the builder.
+:::
+
+(voyager-security)=
+
+### Vega Voyager
+
+The **Voyager** mode of the chart editor's **Visual** tab runs [Vega Voyager](https://github.com/vega/voyager), whose last release (2018) uses React 15, vega 4 and vega-lite 2. It's vendored like the other libraries (pinned in `package-lock.json`, see {doc}`contributing`), and kept away from the admin:
+
+- It runs only on its own admin page, `/admin/wagtail-vega/voyager/` ({py:func}`wagtail_vega.views.voyager`), which needs a logged-in user with permission to access the admin, loaded in an `<iframe sandbox="allow-scripts">`. The page is also sent with its own `Content-Security-Policy`, starting `sandbox allow-scripts`, so it stays sandboxed even if it's opened on its own. Without `allow-same-origin`, it gets an opaque origin: it can't read the admin's DOM, cookies or CSRF token, or make requests the admin's session would authorise. Its scripts and styles (about 2.6 MB) never load in the admin page itself, and are only loaded when the editor first shows Voyager.
+- The same policy cuts Voyager off from the network: `default-src 'none'`, `connect-src 'none'`, `form-action 'none'` and `base-uri 'none'`. Scripts, styles, images and fonts may only come from your static files: `'self'`, or the static files' origin if `STATIC_URL` is on another one, such as a CDN. (Voyager's icon font is inlined, because the sandbox's opaque origin would need CORS headers to load a font file.) The admin page loads the chart's data, from the same places and with the same checks as the chart builder, and passes it in, so Voyager never makes a request itself. Its own data loader is hidden.
+- The admin and the iframe talk with `postMessage`. The admin only accepts messages from that iframe's window, with the sandbox's `"null"` origin; the iframe only accepts messages from its parent at the admin's origin, and only sends to that origin.
+- The spec Voyager reports is converted to Vega-Lite 6 that loads the dataset by name, so no data is copied into it. It's written to the field like the chart builder's, checked live with the validation endpoint, and checked again when the page is saved.
+
+:::{note}
+**If your admin has a Content Security Policy**, the Voyager page needs `'unsafe-eval'` and `'unsafe-inline'` in its own policy, which it sends: vega 4 and Voyager's schema validator compile code with `new Function`, and React 15 sets inline styles. A policy your middleware adds to admin responses applies on top of the page's, so leave `/admin/wagtail-vega/voyager/` out of it, or allow the same. The admin page needs `frame-src 'self'` for the iframe, and the Voyager page `frame-ancestors 'self'`, which it sends, and `X-Frame-Options: SAMEORIGIN`, which it sets itself.
 :::
 
 Some consequences:
