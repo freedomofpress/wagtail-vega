@@ -295,8 +295,9 @@ test("an empty field: the first chart the editor makes is written", () => {
   assert.equal(baseline.report(null, { user: false }), null);
   const text = baseline.report({ mark: "bar", encoding: { x: { field: "a", type: "nominal" } } }, { user: true });
   assert.deepEqual(JSON.parse(text).data, { name: "source" });
-  // Clearing the shelves again puts back the empty field
+  // Clearing the shelves again writes nothing: the field keeps the chart
   assert.equal(baseline.report(null, { user: true }), null);
+  assert.equal(baseline.dirty, true);
 });
 
 test("a load that's a change (another dataset) writes what Voyager shows", () => {
