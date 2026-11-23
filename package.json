@@ -37,7 +37,7 @@
     "redux-undo": "1.0.0-beta9-9-6",
     "tether": "1.4.7",
     "vega": "6.4.0",
-    "vega-embed": "7.3.0",
+    "vega-embed": "7.4.0",
     "vega-lite": "6.5.0",
     "voyager-vega": "npm:vega@4.0.0",
     "voyager-vega-lite": "npm:vega-lite@2.4.0",
